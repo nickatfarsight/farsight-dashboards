@@ -642,6 +642,7 @@ function renderActive(){
   else if(p==='forecast')renderForecast();
   else if(p==='launches')renderNewLaunches();
   else if(p==='doors')renderDoors();
+  else if(p==='dtc')renderDTCFromState();
 }
 
 // Sort helper
@@ -1914,6 +1915,11 @@ function showDoorDetail(loc){
 // DTC PERFORMANCE TAB
 // =====================================================================
 const DTC_CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vTb-rayMWME1v9P22NLqYHD7pOVKydFJirNGk6GqqzI5-YbliPlWfiz-zKKs4tJrGwvzap2FFi2IjyF/pub?gid=107589456&single=true&output=csv';
+let _dtcRaw=null; // cached after first fetch
+
+const DTC_COL={day:0,meta:1,google:2,tiktok:3,spend:4,spendTarget:5,ncr:9,ncrTarget:10,aMER:17,aMERTarget:18,rev:33,revTarget:34,profitDol:39,profitDolTarget:40,profitPct:41,profitPctTarget:42,notes:43};
+const _dtcN=v=>{if(v===null||v===undefined||v==='')return null;const x=parseFloat(v.toString().replace(/[$,%\s]/g,''));return isNaN(x)?null:x;};
+const _dtcPct=v=>{const x=_dtcN(v);if(x===null)return null;return Math.abs(x)<2?x*100:x;};
 
 function buildDTCPage(){
   document.getElementById('page-dtc').innerHTML=`
@@ -1921,27 +1927,27 @@ function buildDTCPage(){
     <div id="dtc-content" style="display:none">
       <div class="kpi-grid" id="dtc-kpis"></div>
       <div class="chart-row">
-        <div class="chart-container" style="position:relative;flex:1">
-          <div class="chart-title">Daily Revenue vs Target</div>
+        <div class="chart-container" style="position:relative">
+          <div class="chart-title" id="dtcRevTitle">Daily Revenue vs Target</div>
           <div style="position:relative;height:260px"><canvas id="dtcRevChart"></canvas></div>
         </div>
-        <div class="chart-container" style="position:relative;flex:1">
+        <div class="chart-container" style="position:relative">
           <div class="chart-title">Cumulative Revenue Pacing (MTD)</div>
           <div style="position:relative;height:260px"><canvas id="dtcCumChart"></canvas></div>
         </div>
       </div>
       <div class="chart-row">
-        <div class="chart-container" style="position:relative;flex:1">
-          <div class="chart-title">Daily Ad Spend by Channel</div>
+        <div class="chart-container" style="position:relative">
+          <div class="chart-title" id="dtcSpendTitle">Daily Ad Spend by Channel</div>
           <div style="position:relative;height:260px"><canvas id="dtcSpendChart"></canvas></div>
         </div>
-        <div class="chart-container" style="position:relative;flex:1">
-          <div class="chart-title">Profitability % Trend</div>
+        <div class="chart-container" style="position:relative">
+          <div class="chart-title" id="dtcProfitTitle">Profitability % Trend</div>
           <div style="position:relative;height:260px"><canvas id="dtcProfitChart"></canvas></div>
         </div>
       </div>
       <div class="table-container">
-        <div class="table-title">Recent Performance — Last 7 Days</div>
+        <div class="table-title" id="dtc-table-title">Recent Performance</div>
         <div id="dtc-table"></div>
       </div>
     </div>
@@ -1950,63 +1956,67 @@ function buildDTCPage(){
 }
 
 function renderDTC(){
+  if(_dtcRaw){renderDTCFromState();return;}
   const url=DTC_CSV_URL+'&cachebust='+Date.now();
   fetch(url)
     .then(r=>r.text())
     .then(text=>{
       const rows=parseCSV(text);
-      // Row 0 = section group headers, row 1 = column names, row 2+ = data
-      // Exclude empty rows and the "Total" summary row at the bottom
-      const data=rows.slice(2).filter(r=>r[0]&&r[0].trim()!==''&&r[0].trim().toLowerCase()!=='total');
-
-      const COL={day:0,meta:1,google:2,tiktok:3,spend:4,spendTarget:5,ncr:9,ncrTarget:10,aMER:17,aMERTarget:18,rev:33,revTarget:34,profitDol:39,profitDolTarget:40,profitPct:41,profitPctTarget:42,notes:43};
-
-      // Parse numeric — strips $, %, commas
-      const n=v=>{if(v===null||v===undefined||v==='')return null;const x=parseFloat(v.toString().replace(/[$,%\s]/g,''));return isNaN(x)?null:x;};
-      // Parse percent field (may be decimal 0.25 or already 25.0 — if <2 assume decimal)
-      const pctN=v=>{const x=n(v);if(x===null)return null;return Math.abs(x)<2?x*100:x;};
-
-      // Actuals = days with positive revenue (excludes future days with $0)
-      const actuals=data.filter(r=>{ const v=n(r[COL.rev]); return v!==null&&v>0; });
-      const allDays=data;
-
-      // MTD aggregates
-      const sum=(arr,col)=>arr.reduce((s,r)=>s+(n(r[col])||0),0);
-      const mtdRev=sum(actuals,COL.rev);
-      const mtdRevTarget=sum(allDays,COL.revTarget);
-      const mtdSpend=sum(actuals,COL.spend);
-      const mtdSpendTarget=sum(allDays,COL.spendTarget);
-      const mtdNCR=sum(actuals,COL.ncr);
-      const mtdNCRTarget=sum(allDays,COL.ncrTarget);
-      const mtdProfitDol=sum(actuals,COL.profitDol);
-      const mtdProfitDolTarget=sum(allDays,COL.profitDolTarget);
-      const profitPct=mtdRev>0?mtdProfitDol/mtdRev*100:null;
-      const profitPctTarget=mtdRevTarget>0?mtdProfitDolTarget/mtdRevTarget*100:null;
-
-      // aMER: average of daily values (weighted by spend)
-      const aMERRows=actuals.filter(r=>n(r[COL.aMER])!==null&&n(r[COL.spend])!==null&&n(r[COL.spend])>0);
-      const totSpendForAMER=aMERRows.reduce((s,r)=>s+(n(r[COL.spend])||0),0);
-      const avgAMER=totSpendForAMER>0?aMERRows.reduce((s,r)=>s+(n(r[COL.aMER])||0)*(n(r[COL.spend])||0),0)/totSpendForAMER:null;
-      const avgAMERTarget=aMERRows.length?aMERRows.reduce((s,r)=>s+(n(r[COL.aMERTarget])||0),0)/aMERRows.length:null;
-
-      renderDTCKPIs({mtdRev,mtdRevTarget,mtdSpend,mtdSpendTarget,avgAMER,avgAMERTarget,mtdProfitDol,mtdProfitDolTarget,profitPct,profitPctTarget,mtdNCR,mtdNCRTarget});
-      renderDTCCharts(actuals,allDays,COL,n,pctN);
-      renderDTCTable(actuals.slice(-7),COL,n,pctN);
-
+      // Row 0=section headers, row 1=col names, row 2+=data; strip Total summary row
+      const allDays=rows.slice(2).filter(r=>r[0]&&r[0].trim()!==''&&r[0].trim().toLowerCase()!=='total');
+      const actuals=allDays.filter(r=>{const v=_dtcN(r[DTC_COL.rev]);return v!==null&&v>0;});
+      _dtcRaw={allDays,actuals};
       document.getElementById('dtc-loading').style.display='none';
       document.getElementById('dtc-content').style.display='';
+      renderDTCFromState();
     })
     .catch(e=>{
       document.getElementById('dtc-loading').innerHTML='<h3 style="color:var(--text-muted)">Unable to load DTC data</h3><p style="color:var(--text-muted)">'+e.message+'</p>';
     });
 }
 
+function renderDTCFromState(){
+  if(!_dtcRaw)return;
+  const {allDays,actuals}=_dtcRaw;
+  const n=_dtcN,pctN=_dtcPct,COL=DTC_COL;
+  const p=state.period;
+
+  // Filter actuals to period window
+  let viewActuals=actuals;
+  let periodLabel='MTD';
+  if(p==='wk'){viewActuals=actuals.slice(-7);periodLabel='Last 7 Days';}
+  else if(p==='l4w'){viewActuals=actuals.slice(-28);periodLabel='Last 4 Weeks';}
+  else{periodLabel='MTD';}
+
+  // Aggregates over the view window
+  const sum=(arr,col)=>arr.reduce((s,r)=>s+(n(r[col])||0),0);
+  const sumAll=(col)=>allDays.reduce((s,r)=>s+(n(r[col])||0),0); // full period target always MTD
+  const vRev=sum(viewActuals,COL.rev);
+  const vRevTarget=p==='wk'?sum(viewActuals,COL.revTarget):sumAll(COL.revTarget);
+  const vSpend=sum(viewActuals,COL.spend);
+  const vSpendTarget=p==='wk'?sum(viewActuals,COL.spendTarget):sumAll(COL.spendTarget);
+  const vNCR=sum(viewActuals,COL.ncr);
+  const vNCRTarget=p==='wk'?sum(viewActuals,COL.ncrTarget):sumAll(COL.ncrTarget);
+  const vProfitDol=sum(viewActuals,COL.profitDol);
+  const vProfitDolTarget=p==='wk'?sum(viewActuals,COL.profitDolTarget):sumAll(COL.profitDolTarget);
+  const profitPct=vRev>0?vProfitDol/vRev*100:null;
+  const profitPctTarget=vRevTarget>0?vProfitDolTarget/vRevTarget*100:null;
+  // aMER = NCR / Spend (matches tracker formula: Total NCR ÷ Total Ad Spend)
+  const aMER=vSpend>0?vNCR/vSpend:null;
+  const aMERTarget=vSpendTarget>0?vNCRTarget/vSpendTarget:null;
+
+  renderDTCKPIs({vRev,vRevTarget,vSpend,vSpendTarget,aMER,aMERTarget,vProfitDol,vProfitDolTarget,profitPct,profitPctTarget,vNCR,vNCRTarget,periodLabel});
+  renderDTCCharts(viewActuals,allDays,COL,n,pctN,periodLabel);
+  renderDTCTable(viewActuals,COL,n,pctN,periodLabel);
+}
+
 function renderDTCKPIs(m){
   const fmtD=v=>v===null?'—':'$'+Math.round(v).toLocaleString();
   const fmtP=v=>v===null?'—':v.toFixed(1)+'%';
   const fmtX=v=>v===null?'—':v.toFixed(2)+'x';
+  const lbl=m.periodLabel;
 
-  function tile(label,actVal,tgtVal,fmtFn,higherIsBetter=true){
+  function tile(label,actVal,tgtVal,fmtFn,higherIsBetter,tip){
     const val=fmtFn(actVal);
     let deltaHtml='';
     if(actVal!==null&&tgtVal!==null&&tgtVal!==0){
@@ -2017,75 +2027,112 @@ function renderDTCKPIs(m){
       const arrow=diff>=0?'▲':'▼';
       deltaHtml=`<div class="kpi-sub" style="color:${col};font-size:12px;margin-top:4px">${arrow} ${fmtFn(Math.abs(diff))} vs target (${Math.abs(diffPct).toFixed(1)}%)</div>`;
     }
-    return`<div class="kpi-card" style="cursor:default"><div class="kpi-label">${label}</div><div class="kpi-value">${val}</div>${deltaHtml}</div>`;
+    const tipHtml=tip?`<span class="tip">${tip}</span>`:'';
+    return`<div class="kpi-card has-tooltip" style="cursor:default"><div class="kpi-label">${label}</div><div class="kpi-value">${val}</div>${deltaHtml}${tipHtml}</div>`;
   }
 
   let html='';
-  html+=tile('MTD Revenue',m.mtdRev,m.mtdRevTarget,fmtD,true);
-  html+=tile('MTD Ad Spend',m.mtdSpend,m.mtdSpendTarget,fmtD,false);
-  html+=tile('aMER (Blended)',m.avgAMER,m.avgAMERTarget,fmtX,true);
-  html+=`<div class="kpi-card" style="cursor:default"><div class="kpi-label">Profitability</div><div class="kpi-value">${fmtD(m.mtdProfitDol)}</div><div class="kpi-sub" style="font-size:13px;margin-top:2px">${fmtP(m.profitPct)} margin${m.profitPctTarget!==null?' · target '+fmtP(m.profitPctTarget):''}</div></div>`;
-  html+=tile('Net Contribution Revenue',m.mtdNCR,m.mtdNCRTarget,fmtD,true);
+  html+=tile(`${lbl} Revenue`,m.vRev,m.vRevTarget,fmtD,true,
+    `<b>Source:</b> Agency tracker "Total Revenue" column (col AJ in sheet)<br><b>Calc:</b> Sum of daily Shopify NC + RC revenue for period`);
+  html+=tile(`${lbl} Ad Spend`,m.vSpend,m.vSpendTarget,fmtD,false,
+    `<b>Source:</b> Agency tracker "Total Ad Spend" column<br><b>Calc:</b> Sum of Meta + Google + TikTok spend for period<br><b>Note:</b> Under-budget = good (lower is better vs target)`);
+  html+=tile(`aMER — ${lbl}`,m.aMER,m.aMERTarget,fmtX,true,
+    `<b>Source:</b> Agency tracker "Total NCR" ÷ "Total Ad Spend"<br><b>Calc:</b> ${lbl} NCR ÷ ${lbl} Spend (matches tracker formula)<br><b>Definition:</b> Advertising Media Efficiency Ratio for new customer revenue`);
+  html+=`<div class="kpi-card has-tooltip" style="cursor:default"><div class="kpi-label">Profitability — ${lbl}</div><div class="kpi-value">${fmtD(m.vProfitDol)}</div><div class="kpi-sub" style="font-size:13px;margin-top:2px">${fmtP(m.profitPct)} margin${m.profitPctTarget!==null?' · target '+fmtP(m.profitPctTarget):''}</div><span class="tip"><b>Source:</b> Agency tracker "Profitability Dollars" and "Profitability %" columns<br><b>Calc:</b> Revenue minus fixed costs, agency fees, baseline spend, and 5% of growth<br><b>%:</b> Profitability $ ÷ Total Revenue</span></div>`;
+  html+=tile(`${lbl} NCR`,m.vNCR,m.vNCRTarget,fmtD,true,
+    `<b>Source:</b> Agency tracker "Total NCR" column<br><b>Definition:</b> New Customer Revenue — Shopify revenue attributed to new customer acquisition campaigns`);
   document.getElementById('dtc-kpis').innerHTML=html;
 }
 
-function renderDTCCharts(actuals,allDays,COL,n,pctN){
-  const labels=actuals.map(r=>r[COL.day]);
+function _dtcDestroyCharts(){
+  ['dtcRevChart','dtcCumChart','dtcSpendChart','dtcProfitChart'].forEach(id=>{
+    const c=Chart.getChart(id);if(c)c.destroy();
+  });
+}
+
+function renderDTCCharts(viewActuals,allDays,COL,n,pctN,periodLabel){
+  _dtcDestroyCharts();
+  const labels=viewActuals.map(r=>r[COL.day]);
   const gridColor='rgba(255,255,255,0.05)';
   const dollarTick=v=>'$'+Math.round(v/1000)+'K';
   const dollarTip=c=>'$'+Math.round(c.parsed.y||0).toLocaleString();
 
-  // 1. Daily Revenue vs Target (bar + line)
+  // Update chart titles to reflect period
+  const el=id=>document.getElementById(id);
+  if(el('dtcRevTitle'))el('dtcRevTitle').textContent=`Daily Revenue vs Target — ${periodLabel}`;
+  if(el('dtcSpendTitle'))el('dtcSpendTitle').textContent=`Ad Spend by Channel — ${periodLabel}`;
+  if(el('dtcProfitTitle'))el('dtcProfitTitle').textContent=`Profitability % Trend — ${periodLabel}`;
+
+  // Shared axis options
+  const yDollar={title:{display:true,text:'Revenue ($)',color:'var(--text-muted)',font:{size:10}},ticks:{callback:dollarTick},grid:{color:gridColor}};
+  const yDollarSpend={title:{display:true,text:'Ad Spend ($)',color:'var(--text-muted)',font:{size:10}},ticks:{callback:dollarTick},grid:{color:gridColor}};
+  const yPct={title:{display:true,text:'Profitability %',color:'var(--text-muted)',font:{size:10}},ticks:{callback:v=>v+'%'},grid:{color:gridColor}};
+  const xBase={grid:{display:false},title:{display:true,text:'Date',color:'var(--text-muted)',font:{size:10}}};
+  const legendOpts={position:'bottom',labels:{color:'var(--text-light)',font:{size:11}}};
+
+  // 1. Daily Revenue vs Target
   new Chart(document.getElementById('dtcRevChart').getContext('2d'),{
     type:'bar',
     data:{labels,datasets:[
-      {label:'Actual Revenue',data:actuals.map(r=>n(r[COL.rev])),backgroundColor:'rgba(74,144,226,0.75)',order:2},
-      {label:'Target',data:actuals.map(r=>n(r[COL.revTarget])),type:'line',borderColor:'rgba(255,107,53,0.9)',backgroundColor:'transparent',borderWidth:2,pointRadius:3,order:1}
+      {label:'Actual Revenue',data:viewActuals.map(r=>n(r[COL.rev])),backgroundColor:'rgba(74,144,226,0.75)',order:2},
+      {label:'Daily Target',data:viewActuals.map(r=>n(r[COL.revTarget])),type:'line',borderColor:'rgba(255,107,53,0.9)',backgroundColor:'transparent',borderWidth:2,pointRadius:3,order:1}
     ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>dollarTip(c)}}},scales:{y:{ticks:{callback:dollarTick},grid:{color:gridColor}},x:{grid:{display:false}}}}
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{...legendOpts},tooltip:{callbacks:{label:c=>c.dataset.label+': '+dollarTip(c)}}},
+      scales:{y:{...yDollar},x:{...xBase,stacked:false}}}
   });
 
-  // 2. Cumulative Revenue Pacing
-  let cumAct=0,cumTgt=0;
-  const cumActData=actuals.map(r=>{cumAct+=(n(r[COL.rev])||0);return cumAct;});
-  const cumTgtData=[];
-  let ct=0;allDays.forEach((r,i)=>{ct+=(n(r[COL.revTarget])||0);if(i<actuals.length)cumTgtData.push(ct);});
-  // Full month target line (all days)
+  // 2. Cumulative Revenue Pacing (always MTD, full month view)
+  let cumAct=0;
+  const cumActData=allDays.map((r,i)=>{
+    if(i<viewActuals.length){cumAct+=(n(r[COL.rev])||0);return cumAct;}
+    return null;
+  });
+  let fullCt=0;
+  const fullTgtData=allDays.map(r=>{fullCt+=(n(r[COL.revTarget])||0);return fullCt;});
   const allLabels=allDays.map(r=>r[COL.day]);
-  let fullCt=0;const fullTgtData=allDays.map(r=>{fullCt+=(n(r[COL.revTarget])||0);return fullCt;});
   new Chart(document.getElementById('dtcCumChart').getContext('2d'),{
     type:'line',
     data:{labels:allLabels,datasets:[
-      {label:'Target Pace',data:fullTgtData,borderColor:'rgba(255,107,53,0.7)',backgroundColor:'transparent',borderDash:[5,5],tension:0.3,pointRadius:0},
-      {label:'Actual',data:[...cumActData,...new Array(allDays.length-actuals.length).fill(null)],borderColor:'rgba(74,144,226,0.9)',backgroundColor:'rgba(74,144,226,0.1)',fill:true,tension:0.3,pointRadius:3}
+      {label:'Full-Month Target',data:fullTgtData,borderColor:'rgba(255,107,53,0.7)',backgroundColor:'transparent',borderDash:[5,5],tension:0.3,pointRadius:0},
+      {label:'Actual Cumulative',data:cumActData,borderColor:'rgba(74,144,226,0.9)',backgroundColor:'rgba(74,144,226,0.1)',fill:true,tension:0.3,pointRadius:3}
     ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.parsed.y!==null?dollarTip(c):'—'}}},scales:{y:{ticks:{callback:dollarTick},grid:{color:gridColor}},x:{grid:{display:false}}}}
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{...legendOpts},tooltip:{callbacks:{label:c=>c.parsed.y!==null?c.dataset.label+': '+dollarTip(c):'—'}}},
+      scales:{y:{...yDollar},x:{...xBase}}}
   });
 
-  // 3. Ad Spend by Channel (stacked bar)
+  // 3. Ad Spend by Channel (stacked)
   new Chart(document.getElementById('dtcSpendChart').getContext('2d'),{
     type:'bar',
     data:{labels,datasets:[
-      {label:'Meta',data:actuals.map(r=>n(r[COL.meta])),backgroundColor:'rgba(66,103,178,0.85)'},
-      {label:'Google',data:actuals.map(r=>n(r[COL.google])),backgroundColor:'rgba(234,67,53,0.85)'},
-      {label:'TikTok',data:actuals.map(r=>n(r[COL.tiktok])),backgroundColor:'rgba(100,100,100,0.85)'}
+      {label:'Meta',data:viewActuals.map(r=>n(r[COL.meta])),backgroundColor:'rgba(66,103,178,0.85)'},
+      {label:'Google',data:viewActuals.map(r=>n(r[COL.google])),backgroundColor:'rgba(234,67,53,0.85)'},
+      {label:'TikTok',data:viewActuals.map(r=>n(r[COL.tiktok])),backgroundColor:'rgba(140,140,140,0.85)'}
     ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>dollarTip(c)}}},scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:dollarTick},grid:{color:gridColor}}}}
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{...legendOpts},tooltip:{mode:'index',callbacks:{label:c=>c.dataset.label+': '+dollarTip(c),footer:items=>'Total: $'+Math.round(items.reduce((s,c)=>s+(c.parsed.y||0),0)).toLocaleString()}}},
+      scales:{x:{stacked:true,...xBase},y:{stacked:true,...yDollarSpend}}}
   });
 
   // 4. Profitability % Trend
   new Chart(document.getElementById('dtcProfitChart').getContext('2d'),{
     type:'line',
     data:{labels,datasets:[
-      {label:'Profitability %',data:actuals.map(r=>pctN(r[COL.profitPct])),borderColor:'rgba(80,200,120,0.9)',backgroundColor:'rgba(80,200,120,0.1)',fill:true,tension:0.3,pointRadius:3},
-      {label:'Target',data:actuals.map(r=>pctN(r[COL.profitPctTarget])),borderColor:'rgba(255,107,53,0.8)',backgroundColor:'transparent',borderDash:[5,5],tension:0.3,pointRadius:0}
+      {label:'Profitability %',data:viewActuals.map(r=>pctN(r[COL.profitPct])),borderColor:'rgba(80,200,120,0.9)',backgroundColor:'rgba(80,200,120,0.1)',fill:true,tension:0.3,pointRadius:3},
+      {label:'Target',data:viewActuals.map(r=>pctN(r[COL.profitPctTarget])),borderColor:'rgba(255,107,53,0.8)',backgroundColor:'transparent',borderDash:[5,5],tension:0.3,pointRadius:0}
     ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.parsed.y!==null?c.parsed.y.toFixed(1)+'%':'—'}}},scales:{y:{ticks:{callback:v=>v+'%'},grid:{color:gridColor}},x:{grid:{display:false}}}}
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{...legendOpts},tooltip:{callbacks:{label:c=>c.parsed.y!==null?c.dataset.label+': '+c.parsed.y.toFixed(1)+'%':'—'}}},
+      scales:{y:{...yPct},x:{...xBase}}}
   });
 }
 
-function renderDTCTable(rows,COL,n,pctN){
-  if(!rows.length){document.getElementById('dtc-table').innerHTML='<p style="color:var(--text-muted);padding:16px">No data</p>';return;}
+function renderDTCTable(viewActuals,COL,n,pctN,periodLabel){
+  const el=document.getElementById('dtc-table-title');
+  if(el)el.textContent=`Recent Performance — ${periodLabel}`;
+  const tbl=document.getElementById('dtc-table');
+  if(!viewActuals.length){tbl.innerHTML='<p style="color:var(--text-muted);padding:16px">No data</p>';return;}
   const fmtD=v=>v===null?'—':'$'+Math.round(v).toLocaleString();
   const fmtX=v=>v===null?'—':v.toFixed(2)+'x';
   const fmtP=v=>v===null?'—':v.toFixed(1)+'%';
@@ -2096,12 +2143,10 @@ function renderDTCTable(rows,COL,n,pctN){
     const col=pos?'var(--green)':'var(--red)';
     return`<td style="padding:8px 12px;text-align:right;color:${col}">${diff>=0?'+':''}${fmtD(diff)}</td>`;
   };
-
   const th=h=>`<th style="padding:8px 12px;text-align:right;white-space:nowrap;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.6px">${h}</th>`;
   const thL=h=>`<th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.6px">${h}</th>`;
   let t=`<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">${thL('Date')}${th('Revenue')}${th('vs Target')}${th('Ad Spend')}${th('vs Budget')}${th('aMER')}${th('Profit %')}${th('NCR')}${thL('Notes')}</tr></thead><tbody>`;
-
-  [...rows].reverse().forEach(r=>{
+  [...viewActuals].reverse().forEach(r=>{
     const rev=n(r[COL.rev]),revT=n(r[COL.revTarget]);
     const spend=n(r[COL.spend]),spendT=n(r[COL.spendTarget]);
     const aMER=n(r[COL.aMER]);
@@ -2121,7 +2166,7 @@ function renderDTCTable(rows,COL,n,pctN){
     </tr>`;
   });
   t+='</tbody></table>';
-  document.getElementById('dtc-table').innerHTML=t;
+  tbl.innerHTML=t;
 }
 
 // =====================================================================
