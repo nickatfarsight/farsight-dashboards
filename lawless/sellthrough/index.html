@@ -1956,7 +1956,8 @@ function renderDTC(){
     .then(text=>{
       const rows=parseCSV(text);
       // Row 0 = section group headers, row 1 = column names, row 2+ = data
-      const data=rows.slice(2).filter(r=>r[0]&&r[0].trim()!=='');
+      // Exclude empty rows and the "Total" summary row at the bottom
+      const data=rows.slice(2).filter(r=>r[0]&&r[0].trim()!==''&&r[0].trim().toLowerCase()!=='total');
 
       const COL={day:0,meta:1,google:2,tiktok:3,spend:4,spendTarget:5,ncr:9,ncrTarget:10,aMER:17,aMERTarget:18,rev:33,revTarget:34,profitDol:39,profitDolTarget:40,profitPct:41,profitPctTarget:42,notes:43};
 
@@ -1965,8 +1966,8 @@ function renderDTC(){
       // Parse percent field (may be decimal 0.25 or already 25.0 — if <2 assume decimal)
       const pctN=v=>{const x=n(v);if(x===null)return null;return Math.abs(x)<2?x*100:x;};
 
-      // Only rows with actual revenue data (past days)
-      const actuals=data.filter(r=>n(r[COL.rev])!==null);
+      // Actuals = days with positive revenue (excludes future days with $0)
+      const actuals=data.filter(r=>{ const v=n(r[COL.rev]); return v!==null&&v>0; });
       const allDays=data;
 
       // MTD aggregates
