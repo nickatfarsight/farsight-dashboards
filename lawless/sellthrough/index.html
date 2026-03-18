@@ -178,6 +178,8 @@ tr.clickable{cursor:pointer;}
 .has-tooltip .tip{visibility:hidden;opacity:0;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#1A1A1A;color:#fff;padding:8px 12px;border-radius:8px;font-size:10px;line-height:1.4;white-space:normal;width:220px;z-index:500;pointer-events:none;transition:opacity .15s;font-weight:400;letter-spacing:0;text-transform:none;}
 .has-tooltip:hover .tip{visibility:visible;opacity:1;}
 .has-tooltip .tip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:#1A1A1A;}
+#kpiTooltip{display:none;position:fixed;background:#1A1A1A;color:#fff;padding:10px 14px;border-radius:8px;font-size:11px;line-height:1.5;width:240px;z-index:9999;pointer-events:none;font-weight:400;letter-spacing:0;text-transform:none;box-shadow:0 4px 12px rgba(0,0,0,.3);}
+.kpi-grid .has-tooltip .tip{display:none;}
 .chart-tip{display:inline-block;position:relative;cursor:help;margin-left:6px;vertical-align:middle;}
 .chart-tip .ct-icon{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--bg-warm);color:var(--text-muted);font-size:9px;font-weight:700;border:1px solid var(--border);}
 .chart-tip .ct-text{visibility:hidden;opacity:0;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#1A1A1A;color:#fff;padding:8px 12px;border-radius:8px;font-size:10px;line-height:1.4;white-space:normal;width:260px;z-index:500;pointer-events:none;transition:opacity .15s;font-weight:400;letter-spacing:0;text-transform:none;}
@@ -277,6 +279,7 @@ document.addEventListener('DOMContentLoaded',function(){
 });
 </script>
 
+<div id="kpiTooltip"></div>
 <div id="pw-content" style="display:none;">
 <div class="header">
   <div>
@@ -393,7 +396,7 @@ function compLabel(){
 function deltaHtml(ty,comp,label){
   if(comp==null||comp===0)return'<span class="kpi-delta" style="color:var(--text-light)">N/A '+(label||compLabel())+'</span>';
   const d=(ty-comp)/Math.abs(comp);const cls=d>=0?'pos':'neg';const arr=d>=0?'&#9650;':'&#9660;';
-  return'<span class="kpi-delta '+cls+'">'+arr+' '+Math.abs(d*100).toFixed(1)+'% '+(label||compLabel())+'</span>';
+  return'<span class="kpi-delta '+cls+'">'+arr+' '+Math.abs(d*100).toFixed(1)+'% '+(label||compLabel())+' of '+fmtK(comp)+'</span>';
 }
 function compDeltaHtml(pv){return deltaHtml(pv.ty,compVal(pv));}
 function kpi(label,value,sub,opts={}){
@@ -1988,31 +1991,28 @@ function renderDTCFromState(){
   else if(p==='l4w'){viewActuals=actuals.slice(-28);periodLabel='Last 4 Weeks';}
   else{periodLabel='MTD';}
 
-  // Aggregates over the view window
+  // Aggregates over the view window — targets only for elapsed days (not full month)
   const sum=(arr,col)=>arr.reduce((s,r)=>s+(n(r[col])||0),0);
-  const sumAll=(col)=>allDays.reduce((s,r)=>s+(n(r[col])||0),0); // full period target always MTD
   const vRev=sum(viewActuals,COL.rev);
-  const vRevTarget=p==='wk'?sum(viewActuals,COL.revTarget):sumAll(COL.revTarget);
+  const vRevTarget=sum(viewActuals,COL.revTarget);
   const vSpend=sum(viewActuals,COL.spend);
-  const vSpendTarget=p==='wk'?sum(viewActuals,COL.spendTarget):sumAll(COL.spendTarget);
+  const vSpendTarget=sum(viewActuals,COL.spendTarget);
   const vNCR=sum(viewActuals,COL.ncr);
-  const vNCRTarget=p==='wk'?sum(viewActuals,COL.ncrTarget):sumAll(COL.ncrTarget);
-  const vProfitDol=sum(viewActuals,COL.profitDol);
-  const vProfitDolTarget=p==='wk'?sum(viewActuals,COL.profitDolTarget):sumAll(COL.profitDolTarget);
-  const profitPct=vRev>0?vProfitDol/vRev*100:null;
-  const profitPctTarget=vRevTarget>0?vProfitDolTarget/vRevTarget*100:null;
+  const vNCRTarget=sum(viewActuals,COL.ncrTarget);
   // aMER = NCR / Spend (matches tracker formula: Total NCR ÷ Total Ad Spend)
   const aMER=vSpend>0?vNCR/vSpend:null;
   const aMERTarget=vSpendTarget>0?vNCRTarget/vSpendTarget:null;
+  // MER = Total Revenue / Total Ad Spend
+  const mer=vSpend>0?vRev/vSpend:null;
+  const merTarget=vSpendTarget>0?vRevTarget/vSpendTarget:null;
 
-  renderDTCKPIs({vRev,vRevTarget,vSpend,vSpendTarget,aMER,aMERTarget,vProfitDol,vProfitDolTarget,profitPct,profitPctTarget,vNCR,vNCRTarget,periodLabel});
+  renderDTCKPIs({vRev,vRevTarget,vSpend,vSpendTarget,aMER,aMERTarget,mer,merTarget,vNCR,vNCRTarget,periodLabel});
   renderDTCCharts(viewActuals,allDays,COL,n,pctN,periodLabel);
   renderDTCTable(viewActuals,COL,n,pctN,periodLabel);
 }
 
 function renderDTCKPIs(m){
   const fmtD=v=>v===null?'—':'$'+Math.round(v).toLocaleString();
-  const fmtP=v=>v===null?'—':v.toFixed(1)+'%';
   const fmtX=v=>v===null?'—':v.toFixed(2)+'x';
   const lbl=m.periodLabel;
 
@@ -2025,22 +2025,23 @@ function renderDTCKPIs(m){
       const pos=higherIsBetter?(diff>=0):(diff<=0);
       const col=pos?'var(--green)':'var(--red)';
       const arrow=diff>=0?'▲':'▼';
-      deltaHtml=`<div class="kpi-sub" style="color:${col};font-size:12px;margin-top:4px">${arrow} ${fmtFn(Math.abs(diff))} vs target (${Math.abs(diffPct).toFixed(1)}%)</div>`;
+      deltaHtml=`<div class="kpi-sub" style="color:${col};font-size:12px;margin-top:4px">${arrow} ${Math.abs(diffPct).toFixed(1)}% vs target of ${fmtFn(tgtVal)}</div>`;
     }
     const tipHtml=tip?`<span class="tip">${tip}</span>`:'';
     return`<div class="kpi-card has-tooltip" style="cursor:default"><div class="kpi-label">${label}</div><div class="kpi-value">${val}</div>${deltaHtml}${tipHtml}</div>`;
   }
 
   let html='';
-  html+=tile(`${lbl} Revenue`,m.vRev,m.vRevTarget,fmtD,true,
-    `<b>Source:</b> Agency tracker "Total Revenue" column (col AJ in sheet)<br><b>Calc:</b> Sum of daily Shopify NC + RC revenue for period`);
+  html+=tile(`${lbl} Total Sales`,m.vRev,m.vRevTarget,fmtD,true,
+    `<b>Source:</b> Agency tracker "Total Revenue" column<br><b>Calc:</b> Sum of daily total Shopify sales (NC + RC) for elapsed days<br><b>Target:</b> Sum of "Total Revenue Target" for elapsed days`);
   html+=tile(`${lbl} Ad Spend`,m.vSpend,m.vSpendTarget,fmtD,false,
-    `<b>Source:</b> Agency tracker "Total Ad Spend" column<br><b>Calc:</b> Sum of Meta + Google + TikTok spend for period<br><b>Note:</b> Under-budget = good (lower is better vs target)`);
+    `<b>Source:</b> Agency tracker "Total Ad Spend" column<br><b>Calc:</b> Sum of Meta + Google + TikTok spend for elapsed days<br><b>Target:</b> Sum of "Target Ad Spend" for elapsed days<br><b>Note:</b> Under-budget = green (lower is better)`);
   html+=tile(`aMER — ${lbl}`,m.aMER,m.aMERTarget,fmtX,true,
-    `<b>Source:</b> Agency tracker "Total NCR" ÷ "Total Ad Spend"<br><b>Calc:</b> ${lbl} NCR ÷ ${lbl} Spend (matches tracker formula)<br><b>Definition:</b> Advertising Media Efficiency Ratio for new customer revenue`);
-  html+=`<div class="kpi-card has-tooltip" style="cursor:default"><div class="kpi-label">Profitability — ${lbl}</div><div class="kpi-value">${fmtD(m.vProfitDol)}</div><div class="kpi-sub" style="font-size:13px;margin-top:2px">${fmtP(m.profitPct)} margin${m.profitPctTarget!==null?' · target '+fmtP(m.profitPctTarget):''}</div><span class="tip"><b>Source:</b> Agency tracker "Profitability Dollars" and "Profitability %" columns<br><b>Calc:</b> Revenue minus fixed costs, agency fees, baseline spend, and 5% of growth<br><b>%:</b> Profitability $ ÷ Total Revenue</span></div>`;
+    `<b>Source:</b> Agency tracker<br><b>Calc:</b> ${lbl} NCR ÷ ${lbl} Ad Spend<br><b>Target:</b> Target NCR ÷ Target Ad Spend<br><b>Definition:</b> Advertising Media Efficiency Ratio — new customer revenue per ad dollar`);
+  html+=tile(`MER — ${lbl}`,m.mer,m.merTarget,fmtX,true,
+    `<b>Source:</b> Agency tracker<br><b>Calc:</b> ${lbl} Total Sales ÷ ${lbl} Ad Spend<br><b>Target:</b> Target Total Sales ÷ Target Ad Spend<br><b>Definition:</b> Media Efficiency Ratio — total revenue (NC + RC) per ad dollar`);
   html+=tile(`${lbl} NCR`,m.vNCR,m.vNCRTarget,fmtD,true,
-    `<b>Source:</b> Agency tracker "Total NCR" column<br><b>Definition:</b> New Customer Revenue — Shopify revenue attributed to new customer acquisition campaigns`);
+    `<b>Source:</b> Agency tracker "Total NCR" column<br><b>Calc:</b> Sum of daily New Customer Revenue for elapsed days<br><b>Target:</b> Sum of "Target NCR" for elapsed days`);
   document.getElementById('dtc-kpis').innerHTML=html;
 }
 
@@ -2168,6 +2169,36 @@ function renderDTCTable(viewActuals,COL,n,pctN,periodLabel){
   t+='</tbody></table>';
   tbl.innerHTML=t;
 }
+
+// =====================================================================
+// KPI TOOLTIP (fixed-position, escapes overflow)
+// =====================================================================
+(function(){
+  const tt=document.getElementById('kpiTooltip');
+  document.addEventListener('mouseover',function(e){
+    const card=e.target.closest('.kpi-grid .has-tooltip');
+    if(!card)return;
+    const tipEl=card.querySelector('.tip');
+    if(!tipEl)return;
+    tt.innerHTML=tipEl.innerHTML;
+    tt.style.display='block';
+    const r=card.getBoundingClientRect();
+    let left=r.right+10;
+    let top=r.top;
+    // If tooltip would overflow right edge, show to the left
+    if(left+250>window.innerWidth){left=r.left-250;}
+    // Keep within viewport vertically
+    if(top+tt.offsetHeight>window.innerHeight){top=window.innerHeight-tt.offsetHeight-8;}
+    if(top<8)top=8;
+    tt.style.left=left+'px';
+    tt.style.top=top+'px';
+  });
+  document.addEventListener('mouseout',function(e){
+    const card=e.target.closest('.kpi-grid .has-tooltip');
+    if(!card)return;
+    if(!card.contains(e.relatedTarget))tt.style.display='none';
+  });
+})();
 
 // =====================================================================
 // INIT
