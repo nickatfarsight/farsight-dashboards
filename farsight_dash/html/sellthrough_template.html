@@ -207,8 +207,9 @@ tr.clickable{cursor:pointer;}
 <!-- PASSWORD GATE -->
 <div id="pw-gate" style="position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#FBF6F3 0%,#FFFFFF 100%);display:flex;align-items:center;justify-content:center;font-family:{{FONT_FAMILY}}'Inter',sans-serif;">
   <div style="text-align:center;max-width:340px;width:90%;">
-    <div style="font-size:28px;font-weight:500;letter-spacing:6px;text-transform:uppercase;color:#1A1A1A;margin-bottom:6px;">{{CLIENT_NAME}}</div>
-    <div style="font-size:12px;color:#A5ABAF;letter-spacing:.5px;margin-bottom:32px;">Performance Dashboard</div>
+    <div style="font-family:{{HEADER_FONT_FAMILY}}{{FONT_FAMILY}}sans-serif;font-size:28px;font-weight:500;letter-spacing:6px;text-transform:uppercase;color:#1A1A1A;margin-bottom:6px;">{{CLIENT_NAME}}</div>
+    <div style="font-size:12px;color:#A5ABAF;letter-spacing:.5px;margin-bottom:4px;">Performance Dashboard</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:4px;font-size:9px;color:#A5ABAF;letter-spacing:0.3px;font-weight:500;margin-bottom:32px;"><span style="opacity:0.7;">Built by</span> <img src="data:image/png;base64,{{FARSIGHT_LOGO_B64}}" style="height:12px;opacity:0.6;" alt="Farsight"></div>
     <input id="pw-input" type="password" placeholder="Enter password" autocomplete="off"
       style="width:100%;padding:12px 16px;border:1px solid #E8DDD5;border-radius:10px;font-size:14px;font-family:{{FONT_FAMILY}}'Inter',sans-serif;text-align:center;outline:none;background:#fff;color:#1A1A1A;transition:border-color .2s;"
       onfocus="this.style.borderColor='#727F97';this.style.boxShadow='0 0 0 2px rgba(114,127,151,.15)'"
