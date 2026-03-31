@@ -308,7 +308,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <div class="header">
   <div>
     <h1>LAWLESS</h1>
-    <div class="subtitle">Sell-Through Performance Dashboard</div>
+    <div class="subtitle">Retail Sales Sell-Through Dashboard</div>
   </div>
   <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;">
     <div class="global-filters">
@@ -1165,15 +1165,15 @@ function renderSKU(){
 
   let kh='';
   kh+=kpi('Active SKUs',fmtN(activeSKUs),'Sephora active or 2026 status',{click:"drillKpi('ytd')",tip:'SKUs where Sephora status = Active OR 2026 status exists and is not Disco. Matches Inventory Dashboard definition.'});
-  kh+=kpi('Top 10 Concentration',totalYTD>0?(top10sum/totalYTD*100).toFixed(1)+'%':'-','Top 10 SKUs % of total',{click:"drillKpi('ytd')",tip:'What share of total YTD revenue comes from the top 10 selling SKUs. High concentration = risk if a top seller drops.'});
-  kh+=kpi('New SKU Contribution',totalYTD>0?(newSum/totalYTD*100).toFixed(1)+'%':'-',fmtK(newSum)+' of '+fmtK(totalYTD),{click:"drillKpi('ytd')",tip:'Revenue share from SKUs with status_2026 = New. Measures how well new launches are performing.'});
-  kh+=kpi('Avg $ / SKU (YTD)',activeSKUs>0?fmtK(totalYTD/activeSKUs):'-',fmtN(activeSKUs)+' active',{click:"drillKpi('ytd')",tip:'Average YTD revenue per active SKU. Higher = more productive assortment.'});
+  kh+=kpi('Top 10 Concentration',totalYTD>0?(top10sum/totalYTD*100).toFixed(1)+'%':'-','Top 10 SKUs % of total',{click:"drillKpi('ytd')",tip:'What share of total YTD retail sales comes from the top 10 selling SKUs. High concentration = risk if a top seller drops.'});
+  kh+=kpi('New SKU Contribution',totalYTD>0?(newSum/totalYTD*100).toFixed(1)+'%':'-',fmtK(newSum)+' of '+fmtK(totalYTD),{click:"drillKpi('ytd')",tip:'Retail sales share from SKUs with status_2026 = New. Measures how well new launches are performing.'});
+  kh+=kpi('Avg $ / SKU (YTD)',activeSKUs>0?fmtK(totalYTD/activeSKUs):'-',fmtN(activeSKUs)+' active',{click:"drillKpi('ytd')",tip:'Average YTD retail sales per active SKU. Higher = more productive assortment.'});
   kh+=kpi('YTD Var %',totalFcst>0?'<span class="'+(totalYTD>=totalFcst?'pos':'neg')+'">'+(totalYTD>=totalFcst?'+':'')+fcVar+'</span>':'N/A',fmtK(totalYTD)+' vs '+fmtK(totalFcst)+' plan',{click:"drillKpi('fc_d_ytd')",tip:'YTD variance vs demand plan forecast. Positive = ahead of plan, negative = behind.'});
   document.getElementById('skuKpis').innerHTML=kh;
 
   // Update chart titles with tooltips
   document.getElementById('skuTop20Title').innerHTML='Top 20 SKUs &mdash; '+periodLabel()+' &mdash; '+channelLabel()+' <span class="chart-hint">(click bar for detail)</span>'+chartTip('Top 20 selling SKUs ranked by sell-through ($) for the selected period across '+channelLabel()+'. Source: Sales Database + Shopify eCommerce.');
-  document.getElementById('skuNVCTitle').innerHTML='New vs Core Performance &mdash; YTD &mdash; '+channelLabel()+' <span class="chart-hint">(click segment)</span>'+chartTip('Revenue split between new launches (2026 Status = New) and core SKUs. Source: Sales Database + Demand Plan SKU List.');
+  document.getElementById('skuNVCTitle').innerHTML='New vs Core Performance &mdash; YTD &mdash; '+channelLabel()+' <span class="chart-hint">(click segment)</span>'+chartTip('Retail sales split between new launches (2026 Status = New) and core SKUs. Source: Sales Database + Demand Plan SKU List.');
 
   // Top 20 bar with forecast
   dc('skuTop20');
@@ -1658,7 +1658,7 @@ function buildNewLaunchesPage(){
   document.getElementById('page-launches').innerHTML=`
     <div class="scope-label" id="nlScopeLabel">New SKUs: Items with "New v Core = New" or no LY sales</div>
     <div class="kpi-grid" id="nlKpis"></div>
-    <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="nlWeeklyTitle">New SKU Weekly Revenue vs Forecast</div><div style="position:relative;height:300px;"><canvas id="nlWeekly"></canvas></div></div></div>
+    <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="nlWeeklyTitle">New SKU Weekly Retail Sales vs Forecast</div><div style="position:relative;height:300px;"><canvas id="nlWeekly"></canvas></div></div></div>
     <div class="chart-row">
       <div class="chart-container"><div class="chart-title" id="nlTop10Title">Top 10 New SKUs <span class="chart-hint">(click bar for detail)</span></div><canvas id="nlTop10"></canvas></div>
       <div class="chart-container"><div class="chart-title" id="nlByCatTitle">New SKUs by Category</div><canvas id="nlByCat"></canvas></div>
@@ -1678,31 +1678,31 @@ function renderNewLaunches(){
   const nlVar=totalFcYTD>0?(((totalRevYTD-totalFcYTD)/totalFcYTD)*100).toFixed(1)+'%':'N/A';
 
   let kh='';
-  kh+=kpi('New SKU Count',NL.count,NL.with_sales+' with sales, '+NL.zero_sales+' zero',{tip:'Total SKUs with status_2026 = New. Shows how many new launches are generating revenue.'});
-  kh+=kpi('New SKU Revenue YTD',fmtK(totalRevYTD),pctOfTotal+' of total sales',{tip:'Total YTD sell-through from new SKUs across all channels.'});
+  kh+=kpi('New SKU Count',NL.count,NL.with_sales+' with sales, '+NL.zero_sales+' zero',{tip:'Total SKUs with status_2026 = New. Shows how many new launches are generating retail sales.'});
+  kh+=kpi('New SKU Retail Sales YTD',fmtK(totalRevYTD),pctOfTotal+' of total sales',{tip:'Total YTD retail sell-through from new SKUs across all channels.'});
   kh+=kpi('% of Total Sales',pctOfTotal,'New SKUs contribution',{tip:'What share of total brand sell-through comes from new launches.'});
-  kh+=kpi('Avg $ / New SKU',fmtK(avgPerSKU),NL.count+' SKUs',{tip:'Average YTD revenue per new SKU. Benchmark against core SKU average.'});
+  kh+=kpi('Avg $ / New SKU',fmtK(avgPerSKU),NL.count+' SKUs',{tip:'Average YTD retail sales per new SKU. Benchmark against core SKU average.'});
   kh+=kpi('vs Plan Var %',totalFcYTD>0?'<span class="'+(totalRevYTD>=totalFcYTD?'pos':'neg')+'">'+(totalRevYTD>=totalFcYTD?'+':'')+nlVar+'</span>':'N/A',fmtK(totalRevYTD)+' vs '+(totalFcYTD>0?fmtK(totalFcYTD):'N/A')+' plan',{tip:'Variance of new SKU actuals vs demand plan forecast. Positive = ahead.'});
-  kh+=kpi('Zero-Sales SKUs','<span style="color:'+(NL.zero_sales>0?'var(--red)':'var(--green)')+'">'+NL.zero_sales+'</span>','No YTD revenue',{tip:'New SKUs with $0 sell-through YTD. May indicate delayed distribution or launch issues.'});
+  kh+=kpi('Zero-Sales SKUs','<span style="color:'+(NL.zero_sales>0?'var(--red)':'var(--green)')+'">'+NL.zero_sales+'</span>','No YTD retail sales',{tip:'New SKUs with $0 sell-through YTD. May indicate delayed distribution or launch issues.'});
   document.getElementById('nlKpis').innerHTML=kh;
 
   // Dynamic chart titles
-  document.getElementById('nlWeeklyTitle').innerHTML='New SKU Weekly Revenue vs Forecast &mdash; All Channels'+chartTip('Weekly sell-through ($) for new SKUs (2026 Status = New) vs demand plan forecast. Source: Sales Database + Shopify + Demand Plan.');
-  document.getElementById('nlTop10Title').innerHTML='Top 10 New SKUs &mdash; YTD &mdash; All Channels <span class="chart-hint">(click bar for detail)</span>'+chartTip('Top 10 new launches by YTD sell-through. Source: Sales Database + Shopify.');
-  document.getElementById('nlByCatTitle').innerHTML='New SKUs by Category &mdash; All Channels'+chartTip('New SKU YTD revenue by product category vs demand plan forecast. Source: Sales Database + Demand Plan.');
+  document.getElementById('nlWeeklyTitle').innerHTML='New SKU Weekly Retail Sales vs Forecast &mdash; All Channels'+chartTip('Weekly retail sell-through ($) for new SKUs (2026 Status = New) vs demand plan forecast. Source: Sales Database + Shopify + Demand Plan.');
+  document.getElementById('nlTop10Title').innerHTML='Top 10 New SKUs &mdash; YTD &mdash; All Channels <span class="chart-hint">(click bar for detail)</span>'+chartTip('Top 10 new launches by YTD retail sell-through. Source: Sales Database + Shopify.');
+  document.getElementById('nlByCatTitle').innerHTML='New SKUs by Category &mdash; All Channels'+chartTip('New SKU YTD retail sales by product category vs demand plan forecast. Source: Sales Database + Demand Plan.');
 
   // Weekly trend
   dc('nlWeekly');
   const aggWk=NL.agg_weekly||[];
   const wks=aggWk.map(w=>w.wk);
   const dsNL=[
-    {label:'TY Revenue',data:aggWk.map(w=>w.ty),borderColor:'#C77D8A',backgroundColor:'rgba(199,125,138,.1)',borderWidth:2,fill:true,tension:.3},
+    {label:'TY Retail Sales',data:aggWk.map(w=>w.ty),borderColor:'#C77D8A',backgroundColor:'rgba(199,125,138,.1)',borderWidth:2,fill:true,tension:.3},
   ];
   if(aggWk.some(w=>w.fc_d>0)){
     dsNL.push({label:'Forecast',data:aggWk.map(w=>w.fc_d),borderColor:'#5B9BD5',borderDash:[4,4],borderWidth:1.5,tension:.3,fill:false});
   }
   if(aggWk.some(w=>w.ly>0)){
-    dsNL.push({label:'LY Revenue',data:aggWk.map(w=>w.ly),borderColor:'#A89889',borderDash:[5,3],borderWidth:1.5,tension:.3,fill:false});
+    dsNL.push({label:'LY Retail Sales',data:aggWk.map(w=>w.ly),borderColor:'#A89889',borderDash:[5,3],borderWidth:1.5,tension:.3,fill:false});
   }
   charts['nlWeekly']=new Chart(document.getElementById('nlWeekly'),{type:'line',data:{
     labels:wks.map(w=>'W'+w),datasets:dsNL
@@ -1729,7 +1729,7 @@ function renderNewLaunches(){
   charts['nlByCat']=new Chart(document.getElementById('nlByCat'),{type:'bar',data:{
     labels:catArr.map(c=>c.cat),
     datasets:[
-      {label:'TY Revenue',data:catArr.map(c=>c.ty),backgroundColor:'#C77D8A'},
+      {label:'TY Retail Sales',data:catArr.map(c=>c.ty),backgroundColor:'#C77D8A'},
       {label:'Forecast',data:catArr.map(c=>c.fc),backgroundColor:'rgba(91,155,213,.35)'},
     ]
   },options:{responsive:true,plugins:{legend:{position:'top'}},scales:{y:{title:{display:true,text:'Retail Sales ($)'},ticks:{callback:v=>fmtK(v)}},x:{title:{display:true,text:'Category'}}}}});
@@ -1827,8 +1827,8 @@ function renderDoors(){
   kh+=kpi('# Doors',fmtN(doors.length),'Filtered Sephora locations',{tip:'Total Sephora store locations matching current filters (region, volume, tier).'});
   kh+=kpi('Week '+M.current_week+' Sales',fmtK(totalWk),'All filtered doors',{tip:'Total sell-through this week across all filtered Sephora doors.'});
   kh+=kpi('YTD Sales',fmtK(totalYTD),'',{delta:deltaHtml(totalYTD,totalYTDLY,'vs LY'),tip:'Year-to-date sell-through for all filtered Sephora doors.'});
-  kh+=kpi('Avg $/Door YTD',fmtK(avgPerDoor),fmtN(doors.length)+' doors',{tip:'Average YTD revenue per Sephora door. Use to identify underperforming locations.'});
-  kh+=kpi('Top Door','<span style="font-size:16px;">'+(topDoor?topDoor.name.substring(0,22):'—')+'</span>',(topDoor?fmtK(topDoor.ytd)+' YTD':''),{tip:'Highest-selling Sephora door by YTD revenue in current filter.'});
+  kh+=kpi('Avg $/Door YTD',fmtK(avgPerDoor),fmtN(doors.length)+' doors',{tip:'Average YTD retail sales per Sephora door. Use to identify underperforming locations.'});
+  kh+=kpi('Top Door','<span style="font-size:16px;">'+(topDoor?topDoor.name.substring(0,22):'—')+'</span>',(topDoor?fmtK(topDoor.ytd)+' YTD':''),{tip:'Highest-selling Sephora door by YTD retail sales in current filter.'});
   document.getElementById('doorKpis').innerHTML=kh;
 
   // Door recap by store volume rating
