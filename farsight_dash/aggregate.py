@@ -81,6 +81,8 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
     print("  Building category monthly data...")
     cat_monthly = _build_cat_monthly(sales_df, forecast_data, fc2d, sku_info,
                                       week_month_map, current_year)
+    coll_monthly = _build_coll_monthly(sales_df, forecast_data, fc2d, sku_info,
+                                        week_month_map, current_year)
 
     # ── 6d-f. SKU-level data ──
     print("  Building SKU-level data...")
@@ -157,6 +159,7 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
         'weekly': weekly,
         'monthly': monthly,
         'cat_monthly': cat_monthly,
+        'coll_monthly': coll_monthly,
         'skus': skus,
         'sku_series': sku_series,
         'sku_weekly': sku_weekly,
@@ -544,6 +547,44 @@ def _build_cat_monthly(sales_df, forecast_data, fc2d, sku_info, week_month_map, 
             'fc_u': round(fc_u, 2), 'fc_d': round(fc_d, 2),
         })
 
+    return result
+
+
+def _build_coll_monthly(sales_df, forecast_data, fc2d, sku_info, week_month_map, current_year):
+    """Monthly sales grouped by Collection (franchise) — parallels cat_monthly."""
+    if 'Collection' not in sales_df.columns:
+        return []
+    sales_df = sales_df.copy()
+    if 'mo' not in sales_df.columns:
+        sales_df['mo'] = sales_df['445 Month']
+    if 'mo_n' not in sales_df.columns:
+        sales_df['mo_n'] = sales_df['mo'].map(MONTH_NUM).fillna(0).astype(int)
+    # sku -> collection map (for forecast attribution)
+    sku_coll = {}
+    for _, r in sales_df[['Item Code', 'Collection']].drop_duplicates().iterrows():
+        sku_coll[r['Item Code']] = safe_str(r['Collection'])
+
+    agg = sales_df.groupby(['Year', 'mo', 'mo_n', 'Collection']).agg({
+        'TY Total Sales $': 'sum', 'TY Total Sales Units': 'sum', 'LY Total Sales $': 'sum',
+    }).reset_index()
+    result = []
+    for _, r in agg.iterrows():
+        yr = int(r['Year']); mo = r['mo']; mo_n = int(r['mo_n'])
+        coll = safe_str(r['Collection'])
+        fc_u = 0; fc_d = 0.0
+        if yr == current_year:
+            for ret, fc_dict in forecast_data.items():
+                for (sku, wk), units in fc_dict.items():
+                    if week_month_map.get((yr, wk), '') == mo and sku_coll.get(sku, '') == coll:
+                        fc_u += units
+                        fc_d += fc2d(ret, sku, units)
+        result.append({
+            'yr': yr, 'mo': mo, 'mo_n': mo_n, 'coll': coll,
+            'ty': round(r['TY Total Sales $'], 2),
+            'ty_u': int(r['TY Total Sales Units']),
+            'ly': round(r['LY Total Sales $'], 2),
+            'fc_u': round(fc_u, 2), 'fc_d': round(fc_d, 2),
+        })
     return result
 
 

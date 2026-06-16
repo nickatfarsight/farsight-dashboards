@@ -429,7 +429,7 @@ function kpi(label,value,sub,opts={}){
 // =====================================================================
 // STATE
 // =====================================================================
-let state={period:'ytd',retailers:['All'],compare:false,category:'All',comparison:'ly',asOfWeek:M.current_week,channel:'all'};
+let state={period:'ytd',retailers:['All'],compare:false,category:'All',comparison:'ly',asOfWeek:M.current_week,channel:'all',catGroupBy:'cat'};
 let charts={};
 function dc(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
 
@@ -803,9 +803,10 @@ function drillKpi(key){
 function buildOverviewPage(){
   document.getElementById('page-overview').innerHTML=`
     <div class="table-container" style="margin-bottom:24px;">
-      <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
         <span>Sell Through by Customer &mdash; Weekly Report</span>
-        <span style="font-size:10px;color:var(--text-light);font-weight:400;">Week ${M.current_week} &middot; ${M.current_month} &middot; FY${M.current_year}</span>
+        <span style="display:flex;align-items:center;gap:10px;"><span style="font-size:10px;color:var(--text-light);font-weight:400;">Week ${M.current_week} &middot; ${M.current_month} &middot; FY${M.current_year}</span>
+        <button type="button" onclick="downloadRecap()" style="font-size:10px;padding:4px 11px;border:1px solid var(--accent);border-radius:7px;background:var(--accent);color:#fff;cursor:pointer;font-weight:700;white-space:nowrap;">⬇ Recap</button></span>
       </div>
       <div id="emailTableWrap"></div>
     </div>
@@ -1605,10 +1606,25 @@ function renderRetailer(){
 // =====================================================================
 // TAB 4: CATEGORY
 // =====================================================================
+window._catGroupBy=function(g){
+  state.catGroupBy=g;
+  const cb=document.getElementById('catGrpCat'), cl=document.getElementById('catGrpColl');
+  if(cb)cb.classList.toggle('active',g==='cat'); if(cl)cl.classList.toggle('active',g==='coll');
+  renderCategory();
+};
+function catGroupDrill(field,val){
+  const skus=(DATA.skus||[]).filter(s=>{const v=s[field];const cv=(v==null||v==='nan'||v==='None')?'':v;return cv===val;}).sort((a,b)=>b.ytd-a.ytd);
+  showDrillDown(val+' — SKU Detail',skus,getDDCols());
+}
 function buildCategoryPage(){
   document.getElementById('page-category').innerHTML=`
-    <div class="scope-label" id="catScopeLabel">Showing: All Retailers</div>
-    <div class="table-container"><div class="table-title">Category Performance Summary</div><div id="catHeatmap"></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+      <div class="scope-label" id="catScopeLabel" style="margin:0;">Showing: All Retailers</div>
+      <div><span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-right:6px;">Group by</span>
+        <button class="period-btn active" id="catGrpCat" onclick="window._catGroupBy('cat')">Category</button>
+        <button class="period-btn" id="catGrpColl" onclick="window._catGroupBy('coll')">Collection</button></div>
+    </div>
+    <div class="table-container"><div class="table-title" id="catSummaryTitle">Category Performance Summary</div><div id="catHeatmap"></div></div>
     <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="catWeeklyTitle">Category Monthly Trend (TY)</div><div style="position:relative;height:300px;"><canvas id="catWeekly"></canvas></div></div></div>
     <div class="chart-row">
       <div class="chart-container"><div class="chart-title" id="catShareTitle">Category Share of YTD Sales <span class="chart-hint">(click slice)</span></div><canvas id="catShare"></canvas></div>
@@ -1619,12 +1635,17 @@ function buildCategoryPage(){
 
 function renderCategory(){
   document.getElementById('catScopeLabel').textContent='Showing: '+scopeText();
-  const cats=M.categories;
+  const grpBy=state.catGroupBy||'cat';
+  const grpField=grpBy==='coll'?'coll':'cat';
+  const grpLabel=grpBy==='coll'?'Collection':'Category';
+  const cleanG=v=>(v==null||v==='nan'||v==='None'||v==='')?null:v;
+  const cats=grpBy==='coll'?(M.collections||[]):M.categories;
+  const tt=document.getElementById('catSummaryTitle'); if(tt)tt.textContent=grpLabel+' Performance Summary';
   const skusByCat={};
-  cats.forEach(cat=>{skusByCat[cat]=filteredSKUs().filter(s=>s.cat===cat);});
+  cats.forEach(cat=>{skusByCat[cat]=filteredSKUs().filter(s=>cleanG(s[grpField])===cat);});
 
   // Heatmap table with forecast
-  let h='<table><thead><tr><th>Category</th><th class="r">'+periodLabel()+' $</th><th class="r">YTD $</th><th class="r">YTD LY</th><th class="r">YTD % Chg</th><th class="r">YTD Fcst</th><th class="r">vs Fcst</th><th class="r">Units</th></tr></thead><tbody>';
+  let h='<table><thead><tr><th>'+grpLabel+'</th><th class="r">'+periodLabel()+' $</th><th class="r">YTD $</th><th class="r">YTD LY</th><th class="r">YTD % Chg</th><th class="r">YTD Fcst</th><th class="r">vs Fcst</th><th class="r">Units</th></tr></thead><tbody>';
   const catMetrics=[];
   cats.forEach(cat=>{
     const skus=skusByCat[cat]||[];
@@ -1638,7 +1659,7 @@ function renderCategory(){
     catMetrics.push({cat,prd,ytd,ytd_ly,ytd_u,fc,pct,fcPct});
     const cls=pct==null?'hm-neutral':(pct>=.1?'hm-green':pct>=0?'hm-light-green':pct>=-0.1?'hm-light-red':'hm-red');
     const fcCls=fcPct==null?'':(fcPct>=0?'hm-green':'hm-red');
-    h+=`<tr class="clickable" onclick="state.category='${cat}';renderActive();">`;
+    h+=`<tr class="clickable" onclick="catGroupDrill('${grpField}',this.getAttribute('data-grp'))" data-grp="${String(cat).replace(/"/g,'&quot;')}">`;
     h+=`<td><strong>${cat}</strong></td><td class="r">${fmtK(prd)}</td><td class="r">${fmtK(ytd)}</td><td class="r">${fmtK(ytd_ly)}</td>`;
     h+=`<td class="r ${cls}" style="font-weight:700">${fmtPct(pct)}</td>`;
     h+=`<td class="r">${fc>0?fmtK(fc):'N/A'}</td><td class="r ${fcCls}" style="font-weight:700">${fcPct!=null?fmtPct(fcPct):'N/A'}</td>`;
@@ -1653,12 +1674,14 @@ function renderCategory(){
   document.getElementById('catWeeklyTitle').innerHTML='Category Monthly Trend (TY) &mdash; '+channelLabel()+chartTip('Monthly sell-through by product category across '+channelLabel()+'. Source: Sales Database + Shopify.');
   document.getElementById('catShareTitle').innerHTML='Category Share of YTD Sales &mdash; '+channelLabel()+' <span class="chart-hint">(click slice)</span>'+chartTip('Each category&#39;s share of total YTD sell-through across '+channelLabel()+'. Source: Sales Database + Shopify.');
 
-  // Category monthly trend
+  // Category/Collection monthly trend
   dc('catWeekly');
-  const months=DATA.cat_monthly.filter(r=>r.yr===M.current_year).map(r=>r.mo);
+  const monthlySrc=grpBy==='coll'?(DATA.coll_monthly||[]):(DATA.cat_monthly||[]);
+  const monthlyKey=grpBy==='coll'?'coll':'cat';
+  const months=monthlySrc.filter(r=>r.yr===M.current_year).map(r=>r.mo);
   const uMos=[...new Set(months)].sort((a,b)=>(MO_ORDER[a]||0)-(MO_ORDER[b]||0));
   const datasets2=cats.map((cat,i)=>{
-    const cm=DATA.cat_monthly.filter(r=>r.yr===M.current_year&&r.cat===cat);
+    const cm=monthlySrc.filter(r=>r.yr===M.current_year&&r[monthlyKey]===cat);
     const cmMap=Object.fromEntries(cm.map(r=>[r.mo,r]));
     return{label:cat,data:uMos.map(m=>(cmMap[m]||{}).ty||0),borderColor:COLORS[i%COLORS.length],borderWidth:2,tension:.3,fill:false};
   });
@@ -1675,16 +1698,16 @@ function renderCategory(){
     onClick:(evt,elements)=>{
       if(!elements.length)return;
       const cat=cats[elements[0].index];
-      const catSkus=filteredSKUs().filter(s=>s.cat===cat).sort((a,b)=>b.ytd-a.ytd);
+      const catSkus=filteredSKUs().filter(s=>cleanG(s[grpField])===cat).sort((a,b)=>b.ytd-a.ytd);
       showDrillDown(cat+' SKU Detail',catSkus,getDDCols());
     }
   }});
 
   // Top SKUs in selected/first category
   dc('catTopSKU');
-  const selCat=state.category!=='All'?state.category:cats[0];
+  const selCat=cats[0];
   document.getElementById('catTopSKUTitle').innerHTML='Top SKUs &mdash; '+(selCat||'All')+' &mdash; '+channelLabel()+' <span class="chart-hint">(click bar)</span>'+chartTip('Top 10 SKUs in '+selCat+' by YTD sell-through across '+channelLabel()+'. Source: Sales Database.');
-  const topCatSKUs=DATA.skus.filter(s=>s.cat===selCat).slice(0,10);
+  const topCatSKUs=DATA.skus.filter(s=>cleanG(s[grpField])===selCat).slice(0,10);
   charts['catTopSKU']=new Chart(document.getElementById('catTopSKU'),{type:'bar',data:{
     labels:topCatSKUs.map(s=>s.desc.substring(0,25)),
     datasets:[
@@ -1971,8 +1994,19 @@ function renderNewLaunches(){
 // =====================================================================
 // TAB 7: SEPHORA DOORS
 // =====================================================================
-let _doorState={territory:'All',region:'All',state:'All',fixture:'All',volume:'All',search:'',regionTile:null};
+let _doorState={territory:'All',region:'All',state:'All',fixture:'All',volume:'All',search:'',regionTile:null,tileGeo:'reg',tileMetric:'abs'};
 
+window._doorGeo=function(g){
+  _doorState.tileGeo=g; if(g==='st')_doorState.regionTile=null;
+  const a=document.getElementById('dGeoReg'),b=document.getElementById('dGeoSt');
+  if(a)a.classList.toggle('active',g==='reg'); if(b)b.classList.toggle('active',g==='st');
+  renderDoors();
+};
+window._doorMetric=function(m){
+  _doorState.tileMetric=m;
+  ['abs','ly','tier'].forEach(x=>{const el=document.getElementById('dMet'+x.charAt(0).toUpperCase()+x.slice(1));if(el)el.classList.toggle('active',x===m);});
+  renderDoors();
+};
 function buildDoorsPage(){
   const lm=DATA.loc_meta||{};
   const hasDoors=DATA.loc_sales&&DATA.loc_sales.length>0;
@@ -2001,6 +2035,15 @@ function buildDoorsPage(){
 
   document.getElementById('page-doors').innerHTML=fh+`
     <div class="kpi-grid" id="doorKpis"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:4px 0 10px;">
+      <div><span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-right:6px;">Geography</span>
+        <button class="period-btn active" id="dGeoReg" onclick="window._doorGeo('reg')">Sephora Regions</button>
+        <button class="period-btn" id="dGeoSt" onclick="window._doorGeo('st')">US States</button></div>
+      <div><span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-right:6px;">Metric</span>
+        <button class="period-btn active" id="dMetAbs" onclick="window._doorMetric('abs')">Absolute $</button>
+        <button class="period-btn" id="dMetLy" onclick="window._doorMetric('ly')">vs LY %</button>
+        <button class="period-btn" id="dMetTier" onclick="window._doorMetric('tier')">vs Tier Avg</button></div>
+    </div>
     <div id="doorRegionGrid"></div>
     <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="doorWeeklyTitle">Weekly Sales Trend &mdash; Filtered Sephora Doors (TY vs LY)</div><div style="position:relative;height:280px;"><canvas id="doorWeekly"></canvas></div></div></div>
     <div class="table-container"><div class="table-title" style="display:flex;justify-content:space-between;align-items:center;"><span>Sephora Door Leaderboard</span><span id="doorCount" style="font-size:11px;color:var(--text-muted);font-weight:400;"></span></div><div id="doorTableWrap" style="max-height:600px;overflow-y:auto;"></div></div>
@@ -2039,24 +2082,35 @@ function renderDoors(){
   kh+=kpi('Top Door','<span style="font-size:16px;">'+(topDoor?topDoor.name.substring(0,22):'—')+'</span>',(topDoor?fmtK(topDoor.ytd)+' YTD':''),{tip:'Highest-selling Sephora door by YTD revenue in current filter.'});
   document.getElementById('doorKpis').innerHTML=kh;
 
-  // Region heatmap tiles
+  // Geography heatmap tiles (Region or State) with metric toggle
+  const geoKey=_doorState.tileGeo==='st'?'st':'reg';
   const regData={};
   doors.forEach(d=>{
-    if(!d.reg||d.reg==='nan')return;
-    if(!regData[d.reg])regData[d.reg]={reg:d.reg,ytd:0,ytd_ly:0,count:0,wk:0};
-    regData[d.reg].ytd+=d.ytd;regData[d.reg].ytd_ly+=d.ytd_ly;regData[d.reg].count++;regData[d.reg].wk+=d.wk;
+    const g=d[geoKey];
+    if(!g||g==='nan')return;
+    if(!regData[g])regData[g]={reg:g,ytd:0,ytd_ly:0,count:0,wk:0};
+    regData[g].ytd+=d.ytd;regData[g].ytd_ly+=d.ytd_ly;regData[g].count++;regData[g].wk+=d.wk;
   });
   const regArr=Object.values(regData).sort((a,b)=>b.ytd-a.ytd);
-  if(regArr.length>0&&regArr.length<=30){
+  // Tier (per-door volume) average $/door for the vs-Tier-Avg metric
+  const portfolioAvg=doors.length?totalYTD/doors.length:0;
+  if(regArr.length>0&&regArr.length<=60){
+    const metric=_doorState.tileMetric;
     let rh='<div class="region-grid">';
     regArr.forEach(r=>{
-      const d=r.ytd_ly>0?delta(r.ytd,r.ytd_ly):null;
-      const cls=d==null?'':(d>=0?'pos':'neg');
+      const lyPct=r.ytd_ly>0?delta(r.ytd,r.ytd_ly):null;
+      const avgPerDoor=r.count?r.ytd/r.count:0;
+      const tierPct=portfolioAvg>0?(avgPerDoor-portfolioAvg)/portfolioAvg:null;
+      let main, sub, cls='';
+      if(metric==='ly'){main=fmtPct(lyPct);cls=lyPct==null?'':(lyPct>=0?'pos':'neg');sub=fmtK(r.ytd)+' YTD';}
+      else if(metric==='tier'){main=fmtPct(tierPct);cls=tierPct==null?'':(tierPct>=0?'pos':'neg');sub=fmtK(avgPerDoor)+'/door avg';}
+      else{main=fmtK(r.ytd);cls='';sub=r.count+' doors &middot; <span class="'+(lyPct>=0?'pos':'neg')+'">'+fmtPct(lyPct)+'</span>';}
       const active=_doorState.regionTile===r.reg?' active-filter':'';
-      rh+='<div class="region-tile'+active+'" onclick="toggleRegionTile(\''+r.reg.replace(/'/g,"\\'")+'\')">';
+      const clickable=geoKey==='reg';
+      rh+='<div class="region-tile'+active+'"'+(clickable?' onclick="toggleRegionTile(\''+String(r.reg).replace(/'/g,"\\'")+'\')"':' style="cursor:default;"')+'>';
       rh+='<div class="rt-label">'+r.reg+'</div>';
-      rh+='<div class="rt-value">'+fmtK(r.ytd)+'</div>';
-      rh+='<div class="rt-sub">'+r.count+' doors &middot; <span class="'+cls+'">'+fmtPct(d)+'</span></div>';
+      rh+='<div class="rt-value '+cls+'">'+main+'</div>';
+      rh+='<div class="rt-sub">'+sub+'</div>';
       rh+='</div>';
     });
     rh+='</div>';
@@ -2866,6 +2920,68 @@ function buildDaashPage(){
 }
 
 // =====================================================================
+// CSV DOWNLOAD — auto-attach a "⬇ CSV" button to every data table
+// =====================================================================
+function _tableToCSV(table){
+  const esc=v=>{v=(v==null?'':String(v)).replace(/[▲▼◀]/g,'').replace(/ /g,' ').replace(/\s+/g,' ').trim();return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const lines=[];
+  table.querySelectorAll('thead tr').forEach(tr=>lines.push([...tr.children].map(c=>esc(c.textContent)).join(',')));
+  table.querySelectorAll('tbody tr').forEach(tr=>lines.push([...tr.children].map(c=>esc(c.textContent)).join(',')));
+  return lines.join('\n');
+}
+function _downloadCSV(text,filename){
+  const blob=new Blob([text],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},100);
+}
+function _attachCsvButtons(root){
+  (root||document).querySelectorAll('.table-container').forEach(tc=>{
+    if(tc.querySelector(':scope > .csv-dl-btn')||tc.querySelector('.csv-dl-btn'))return;
+    const table=tc.querySelector('table'); if(!table||!table.querySelector('tbody tr'))return;
+    const titleEl=tc.querySelector('.table-title');
+    const name=((titleEl?titleEl.textContent:'table').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'').toLowerCase()||'table').slice(0,40);
+    const btn=document.createElement('button');
+    btn.className='csv-dl-btn';btn.type='button';btn.textContent='⬇ CSV';
+    btn.style.cssText='font-size:10px;padding:3px 9px;border:1px solid var(--border);border-radius:7px;background:var(--bg-card);color:var(--text-muted);cursor:pointer;font-weight:600;white-space:nowrap;';
+    btn.onclick=function(e){e.stopPropagation();_downloadCSV(_tableToCSV(table),'{{CLIENT_SLUG}}_'+name+'.csv');};
+    if(titleEl){titleEl.style.display='flex';titleEl.style.justifyContent='space-between';titleEl.style.alignItems='center';titleEl.appendChild(btn);}
+    else{btn.style.cssText+='position:absolute;top:14px;right:16px;';tc.style.position='relative';tc.insertBefore(btn,tc.firstChild);}
+  });
+}
+// Re-attach after any DOM render (tabs rebuild innerHTML)
+const _csvObserver=new MutationObserver(()=>{_attachCsvButtons();});
+
+// Consolidated "Recap" export — Summary / By Retailer / Top SKUs / Inventory in one CSV
+function downloadRecap(){
+  const q=v=>{v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const L=[];
+  const all=DATA.ret_summary.find(r=>r.ret==='All')||{};
+  L.push('DEMO BRAND — Weekly Recap');
+  L.push('Data through,Week '+M.current_week+' ('+M.current_week_end+')');
+  L.push('');
+  L.push('SUMMARY');
+  L.push('Metric,Value');
+  [['Week $',all.wk],['MTD $',all.mtd],['YTD $',all.ytd],['YTD LY $',all.ytd_ly],['YTD Forecast $',all.fc_d_ytd],['YTD Units',all.ytd_u]]
+    .forEach(([k,v])=>L.push(q(k)+','+Math.round(v||0)));
+  L.push('');
+  L.push('BY RETAILER');
+  L.push('Retailer,Week $,MTD $,YTD $,YTD LY $,YTD Fcst $');
+  DATA.ret_summary.filter(r=>r.ret!=='All').forEach(r=>L.push([q(r.ret),Math.round(r.wk||0),Math.round(r.mtd||0),Math.round(r.ytd||0),Math.round(r.ytd_ly||0),Math.round(r.fc_d_ytd||0)].join(',')));
+  L.push('');
+  L.push('TOP 15 SKUS (YTD)');
+  L.push('SKU,Product,Category,YTD $,YTD Units');
+  (DATA.skus||[]).slice().sort((a,b)=>b.ytd-a.ytd).slice(0,15).forEach(s=>L.push([s.ic,q(s.desc),q(s.cat),Math.round(s.ytd||0),Math.round(s.ytd_u||0)].join(',')));
+  const inv=(DATA.inventory&&DATA.inventory.aggregates);
+  if(inv){
+    L.push('');L.push('INVENTORY');L.push('Channel,Units,COGS $,GMV $,WOS');
+    L.push(['OWD',inv.owd_units,inv.owd_cogs,inv.owd_gmv,inv.owd_wos].join(','));
+    L.push(['Sephora',inv.seph_units,inv.seph_cogs,inv.seph_gmv,inv.seph_wos].join(','));
+    L.push(['Total',inv.total_units,inv.total_cogs,inv.total_gmv,''].join(','));
+  }
+  _downloadCSV(L.join('\n'),'{{CLIENT_SLUG}}_weekly_recap_W'+M.current_week+'.csv');
+}
+
+// =====================================================================
 // INIT
 // =====================================================================
 buildOverviewPage();
@@ -2884,6 +3000,8 @@ buildDoorMasterPage();
 buildCalendarPage();
 buildRetailerMultiSelect();
 renderOverview();
+_attachCsvButtons();
+try{_csvObserver.observe(document.getElementById('pw-content')||document.body,{childList:true,subtree:true});}catch(e){}
 
 </script>
 </div><!-- /pw-content -->
