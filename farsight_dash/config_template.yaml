@@ -1,0 +1,167 @@
+# ─────────────────────────────────────────────────────────────
+# Farsight Dashboard — Client Configuration
+# ─────────────────────────────────────────────────────────────
+# Fill this out for each new client. Column names must match
+# exactly what's in the client's Excel files.
+# Set any optional section to null to skip it.
+
+# ─── Identity ───
+client_name: "BRAND NAME"          # Displayed on dashboard header
+client_slug: "brandname"            # URL-safe slug (lowercase, no spaces)
+password: "brandname"               # Dashboard access password
+dashboard_url: ""                   # e.g., https://builtbyfarsight.com/brandname/sellthrough/
+
+# ─── Branding ───
+branding:
+  logo_file: null                   # Logo filename in shared_data/Branding/ (PNG)
+  primary_color: "#727F97"          # Hex color for accents, buttons, charts (Farsight steel blue)
+  font_family: null                 # Custom font name, or null for default (Inter)
+  font_files: null                  # List of {file, weight, style} dicts, or null
+  # Example font_files:
+  # - file: "CustomFont-Regular.otf"
+  #   weight: 400
+  #   style: normal
+  # - file: "CustomFont-Bold.otf"
+  #   weight: 700
+  #   style: normal
+
+# ─── Calendar ───
+calendar:
+  type: "445"                       # "445" (fiscal) or "standard" (calendar months)
+  current_year: 2026
+
+# ─── Data Sources ───
+sources:
+
+  # REQUIRED: Weekly sales by retailer/SKU
+  sales_database:
+    file_pattern: "Sales Database"  # Partial filename match in shared_data/
+    sheet_name: "Sales Database"    # Excel sheet name
+    columns:
+      item_code: "Item Code"        # SKU identifier column
+      year: "Year"
+      week: "Week"                  # Week number (1-52)
+      week_end_date: "Week End Date"
+      month_445: "445 Month"        # null if using standard calendar
+      retailer: "Retailer"          # Retailer/channel name
+      ty_total_dollars: "TY Total Sales $"
+      ty_bm_dollars: "TY B&M Sales $"       # null if no B&M/Dotcom split
+      ty_dc_dollars: "TY Dotcom Sales $"     # null if no B&M/Dotcom split
+      ty_total_units: "TY Total Sales Units"
+      ly_total_dollars: "LY Total Sales $"
+      ly_bm_dollars: "LY B&M Sales $"       # null if no split
+      ly_dc_dollars: "LY Dotcom Sales $"     # null if no split
+
+  # RECOMMENDED: SKU master with hierarchy and SRP
+  sku_master:
+    file_pattern: "Demand Plan"     # File containing SKU list
+    sheet_name: "Sku List"          # Sheet name
+    columns:
+      sku: "SKU"
+      product: "Product"            # Product name/description
+      franchise: null               # Product line/franchise (null if N/A)
+      category: "Category"
+      sub_category: null            # null if N/A
+      status_current_year: "2026 Status"  # Current year status column
+      srp: "SRP"                    # Suggested Retail Price
+      active_flag: "Active"         # Column used to determine active/disco
+    active_value: "A"               # Value in active_flag meaning "active"
+    new_value: "New"                # Value in status column meaning "new launch"
+    disco_value: "Disco"            # Value meaning "discontinued"
+
+  # OPTIONAL: Forecast/demand plan
+  demand_plan: null                 # Set to null if no forecasts available
+  # demand_plan:
+  #   file_pattern: "Demand Plan"
+  #   retailer_sheets:              # Sheet name → internal retailer name
+  #     "Sephora": "Sephora"
+  #     "Target": "Target"
+  #   channel_split_retailer: null  # Retailer with B&M/Dotcom forecast split (e.g., "Sephora")
+  #   no_channel_sheets: []         # Sheets without channel column (e.g., ["Ecomm"])
+
+  # OPTIONAL: DTC / eCommerce data (Shopify CSV for sell-through)
+  dtc: null                         # Set to null if no DTC data
+  # dtc:
+  #   platform: "shopify"
+  #   file_pattern: "Shopify eCommerce Sales"
+  #   ly_file_pattern: "Shopify eCommerce Sales 2025"  # LY data file
+  #   retailer_name: "eCommerce"    # How DTC appears in the retailer list
+
+  # OPTIONAL: DTC Performance tab (daily metrics + cohort retention)
+  # Requires two CSV files in shared_data/:
+  #   1. DTC Daily CSV — one row per day with columns:
+  #      Date, Gross Sales, Gross Sales Target, Meta Spend, Google Spend,
+  #      TikTok Spend, Ad Spend Target, Orders, Units, Sessions,
+  #      New Customers, New Customers Target, Returning Customers, NCR, NCR Target
+  #   2. DTC Cohorts CSV — one row per monthly cohort with columns:
+  #      Cohort Month, New Customers, M1 Returning, M2 Returning, ... M5 Returning
+  dtc_performance: null
+  # dtc_performance:
+  #   daily_file_pattern: "DTC Daily"
+  #   cohort_file_pattern: "DTC Cohorts"
+
+  # OPTIONAL: Store/door-level data
+  location: null                    # Set to null if no door data
+  # location:
+  #   file_pattern: "Location Database"
+  #   sheet_name: "Location Data"
+  #   retailer_name: "Sephora"      # Which retailer this door data is for
+  #   columns:
+  #     location_number: "Location Number"
+  #     location_desc: "Location Desc"
+  #     territory: "Territory"
+  #     region: "Region"
+  #     state: "State"
+  #     city: "City"
+  #     fixture: "Fixture"
+  #     volume: "Store Volume"
+  #     week_sales_dollars: "Week End Sales Net $"
+  #     week_sales_dollars_ly: "Week End Sales Net $ LY"
+  #     week_sales_units: "Week End Sales Units"
+  #     week_inv_retail: "Week End Inv Retail"
+  #     week_afs_units: "Week End AFS Units"
+  #     ytd_dollars: "Week End YTD Sales Net $"
+  #     ytd_dollars_ly: "Week End YTD Sales Net $ LY"
+
+  # OPTIONAL: 3PL / warehouse inventory (enables Inventory tabs)
+  inventory: null                   # Set to null if no inventory data
+  # inventory:
+  #   file_pattern: "Inventory"
+  #   sheet_name: "Inventory"
+  #   columns:
+  #     sku: "SKU"
+  #     on_hand_units: "On Hand Units"
+  #     cost_per_unit: "FOB/COG"    # Cost per unit for inventory value calc
+  #     location: null              # Warehouse name (null if single warehouse)
+
+  # OPTIONAL: Open purchase orders (enhances Inventory tabs)
+  purchase_orders: null             # Set to null if no PO data
+  # purchase_orders:
+  #   file_pattern: "Open POs"
+  #   sheet_name: "POs"
+  #   columns:
+  #     sku: "SKU"
+  #     po_number: "PO Number"
+  #     ordered_units: "Ordered Units"
+  #     expected_date: "Expected Date"
+
+# ─── Dashboard Tabs ───
+tabs:
+  # Sell-through tabs
+  overview: true                    # Sales trends, KPI tiles
+  sku_performance: true             # SKU ranking, leaderboard
+  retailer_detail: true             # Per-retailer deep dive
+  category: true                    # Category breakdown
+  forecast: false                   # Requires demand_plan config above
+  new_launches: true                # New product tracking
+  doors: false                      # Requires location config above
+  dtc: false                        # Requires dtc config above
+
+  # Inventory tabs (require inventory data source above)
+  inv_overview: false               # Inventory KPIs, WOS, tier distribution, cost
+  inv_detail: false                 # Inventory SKU table with sortable columns, filters
+
+# ─── Slack Output ───
+slack:
+  channel_name: ""                  # Slack channel for weekly update
+  message_prefix: "BRAND NAME"     # Prefix for Slack messages
