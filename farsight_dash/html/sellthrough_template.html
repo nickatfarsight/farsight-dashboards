@@ -28,7 +28,8 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:{{FONT_FAMILY}}'Inter',sans-serif;font-weight:400;background:var(--bg-warm);color:var(--text);line-height:1.5;}
 
-.header{background:linear-gradient(135deg,#FFFFFF 0%,#FBF6F3 100%);border-bottom:1px solid var(--border);padding:20px 32px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.04);}
+.topbar{position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.05);}
+.header{background:linear-gradient(135deg,#FFFFFF 0%,#FBF6F3 100%);border-bottom:1px solid var(--border);padding:20px 32px;display:flex;align-items:center;justify-content:space-between;}
 .header h1{font-family:{{HEADER_FONT_FAMILY}}{{FONT_FAMILY}}sans-serif;font-size:26px;font-weight:500;color:var(--text);letter-spacing:6px;text-transform:uppercase;}
 .header .subtitle{font-size:13px;color:var(--text-muted);margin-top:2px;font-weight:400;letter-spacing:.5px;}
 .date-badge{background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;padding:8px 20px;border-radius:24px;font-weight:600;font-size:12px;letter-spacing:.3px;max-width:320px;text-align:center;line-height:1.3;}
@@ -242,6 +243,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <div id="kpiTooltip"></div>
 <div id="pw-content" style="display:none;">
+<div class="topbar">
 <div class="header">
   <div>
     <h1 class="brand-title" style="cursor:pointer;" onclick="document.querySelector('.nav-tab[data-page=overview]').click();">{{CLIENT_NAME}}</h1>
@@ -283,12 +285,12 @@ document.addEventListener('DOMContentLoaded',function(){
   <div class="nav-tab" data-page="launches">New Launches</div>
   <div class="nav-tab" data-page="doors">Sephora Doors</div>
   <div class="nav-tab" data-page="dtc">DTC Performance</div>
-  <div class="nav-tab" data-page="inv-overview">Inventory</div>
-  <div class="nav-tab" data-page="inv-detail">Inventory OH</div>
+  <div class="nav-tab" data-page="inv-overview">Inventory OH</div>
   <div class="nav-tab" data-page="daash">DAASH</div>
   <div class="nav-tab" data-page="sku-master">SKU Master</div>
   <div class="nav-tab" data-page="door-master">Sephora Door Master</div>
   <div class="nav-tab" data-page="calendar">Calendar</div>
+</div>
 </div>
 
 <div id="page-overview" class="page active"></div>
@@ -743,14 +745,8 @@ document.querySelectorAll('.period-btn').forEach(b=>b.addEventListener('click',(
   sel.onchange=function(){applyAsOfWeek(parseInt(this.value,10));};
 })();
 
-// Sephora Channel (B&M vs .com) filter — only shown if the data has a channel split
-(function(){
-  const wrap=document.getElementById('channelWrap'), sel=document.getElementById('fChannel');
-  if(!wrap||!sel||!_splitRet)return;
-  wrap.style.display='';
-  const lab=wrap.querySelector('label'); if(lab)lab.textContent=_splitRet+' Channel';
-  sel.onchange=function(){state.channel=this.value;applyFilters();};
-})();
+// Sephora Channel (B&M vs .com) global filter removed to match Lawless — channel stays combined.
+// (state.channel remains 'all'; B&M/.com still shown within charts that split it.)
 
 // Tab navigation
 document.querySelectorAll('.nav-tab').forEach(t=>t.addEventListener('click',()=>{
@@ -875,10 +871,11 @@ function renderEmailTable(){
 
   const SEP_BORDER='border-left:2px solid var(--border);';
 
-  function buildRow(name,r,isTotal,isSub){
+  function buildRow(name,r,isTotal,isSub,retKey){
     const nameStyle=isTotal?'font-weight:700;':'font-weight:600;';
     const subStyle=isSub?'padding-left:22px;color:var(--text-muted);font-weight:400;font-size:12px;':'';
-    let row=isTotal?'<tr class="total-row">':'<tr>';
+    const drill=retKey?(' class="clickable" data-drill-ret="'+String(retKey).replace(/"/g,'&quot;')+'" style="cursor:pointer;"'):'';
+    let row=isTotal?'<tr class="total-row">':'<tr'+drill+'>';
     row+='<td style="'+nameStyle+subStyle+'">'+name+'</td>';
     row+='<td class="r">'+fmtK(r.wk)+'</td>';
     row+='<td class="r">'+fmtK(r.mtd)+'</td>';
@@ -897,23 +894,37 @@ function renderEmailTable(){
 
   // Sephora US: B&M and .com sub-rows, then Sephora Total (US), then Sephora UK standalone
   const bmRow={wk:sepRow.wk_bm||0,wk_ly:sepRow.wk_bm_ly||0,mtd:sepRow.mtd_bm||0,ytd:sepRow.ytd_bm||0,ytd_ly:sepRow.ytd_bm_ly||0,fc_d_wk:sepRow.fc_d_wk_bm||0,fc_d_ytd:sepRow.fc_d_ytd_bm||0};
-  h+=buildRow('Sephora B&M',bmRow,false,true);
+  h+=buildRow('Sephora B&M',bmRow,false,true,'Sephora');
   const dcRow={wk:sepRow.wk_dc||0,wk_ly:sepRow.wk_dc_ly||0,mtd:sepRow.mtd_dc||0,ytd:sepRow.ytd_dc||0,ytd_ly:sepRow.ytd_dc_ly||0,fc_d_wk:sepRow.fc_d_wk_dc||0,fc_d_ytd:sepRow.fc_d_ytd_dc||0};
-  h+=buildRow('Sephora.com',dcRow,false,true);
-  h+=buildRow('Sephora Total',sepRow,false,false);
-  if(sepUKRow.ytd>0||sepUKRow.wk>0) h+=buildRow('Sephora UK',sepUKRow,false,false);
+  h+=buildRow('Sephora.com',dcRow,false,true,'Sephora');
+  h+=buildRow('Sephora Total',sepRow,false,false,'Sephora');
+  if(sepUKRow.ytd>0||sepUKRow.wk>0) h+=buildRow('Sephora UK',sepUKRow,false,false,'Sephora UK');
 
   // Other retailers (exclude Sephora, Sephora UK — both handled above)
   const skipRets=new Set(['Sephora','Sephora UK']);
   rets.filter(r=>!skipRets.has(r.ret)).forEach(r=>{
     if(r.ret==='GMA'&&r.ytd===0&&r.wk===0)return;
-    h+=buildRow(r.ret,r,false,false);
+    h+=buildRow(r.ret,r,false,false,r.ret);
   });
 
   // Total row
   h+=buildRow('TOTAL',allRow,true,false);
   h+='</tbody></table>';
   document.getElementById('emailTableWrap').innerHTML=h;
+  document.querySelectorAll('#emailTableWrap tr[data-drill-ret]').forEach(tr=>{
+    tr.addEventListener('click',()=>customerDrill(tr.dataset.drillRet));
+  });
+}
+
+function customerDrill(retKey){
+  const skus=DATA.skus.filter(s=>s.rets&&s.rets[retKey]).sort((a,b)=>(b.rets[retKey]?.ty||0)-(a.rets[retKey]?.ty||0));
+  if(!skus.length)return;
+  showDrillDown(retKey+' — SKU Detail (YTD)',skus,[
+    {key:'ic',label:'Item'},{key:'desc',label:'SKU',render:r=>(r.desc||'').substring(0,35)},{key:'cat',label:'Category'},
+    {key:'_ty',label:'YTD $',align:'r',render:r=>fmtK(r.rets[retKey]?.ty)},
+    {key:'_ly',label:'LY $',align:'r',render:r=>fmtK(r.rets[retKey]?.ly)},
+    {key:'ytd',label:'Total YTD',align:'r',render:r=>fmtK(r.ytd)},
+  ]);
 }
 
 const NOTES_CSV_URL=M.notes_csv_url||'';
@@ -1356,11 +1367,66 @@ function buildSKUPage(){
       <div class="chart-container"><div class="chart-title" id="skuNVCTitle">New vs Core Performance <span class="chart-hint">(click segment)</span></div><canvas id="skuNVC"></canvas></div>
     </div>
     <div class="table-container"><div class="table-title">SKU Leaderboard</div><div id="skuTableWrap"></div></div>
+    <div id="skuYoYSection"></div>
   `;
   M.collections.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;document.getElementById('fColl').appendChild(o);});
   document.getElementById('fColl').onchange=()=>renderSKU();
   document.getElementById('fNVC').onchange=()=>renderSKU();
   document.getElementById('skuSearch').oninput=()=>renderSKU();
+  buildSkuYoY();
+}
+
+function buildSkuYoY(){
+  const target=document.getElementById('skuYoYSection'); if(!target)return;
+  const skus=DATA.skus||[];
+  const topSku=skus.slice().sort((a,b)=>(b.ytd||0)-(a.ytd||0))[0];
+  target.innerHTML=`
+    <div class="chart-container" style="position:relative;">
+      <div class="table-title" style="margin-bottom:6px;">SKU YoY Trend</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Type a SKU number or product name &middot; weekly TY vs LY vs Forecast</div>
+      <div class="filter-bar" style="margin-bottom:10px;">
+        <div style="flex:1;"><label>SKU (number or product name)</label><br><input class="search-box" id="yoySkuSearch" list="yoySkuList" placeholder="e.g. 1001 or 'Serum'" style="width:100%;"></div>
+        <datalist id="yoySkuList">${skus.map(s=>'<option value="'+s.ic+' — '+(s.desc||'').replace(/"/g,'&quot;')+'">').join('')}</datalist>
+        <div><label>Show</label><br><label style="font-size:11px;cursor:pointer;"><input type="checkbox" id="yoyShowFc" checked> Forecast</label></div>
+      </div>
+      <div id="yoyTitle" style="font-size:12px;font-weight:600;margin-bottom:6px;"></div>
+      <div style="position:relative;height:320px;"><canvas id="yoyChart"></canvas></div>
+      <div id="yoySummary" style="margin-top:10px;font-size:11px;color:var(--text-muted);"></div>
+    </div>`;
+  const inp=document.getElementById('yoySkuSearch');
+  function draw(){
+    const v=(inp.value||'').trim();
+    let ic=parseInt(v.split(/[\s\-—]/)[0],10);
+    let sku=skus.find(s=>s.ic===ic);
+    if(!sku&&v){const lc=v.toLowerCase();sku=skus.find(s=>(s.desc||'').toLowerCase().indexOf(lc)>=0);}
+    if(!sku)sku=topSku;
+    if(!sku){document.getElementById('yoyTitle').textContent='No SKU data';return;}
+    const showFc=document.getElementById('yoyShowFc').checked;
+    const rows=(DATA.sku_weekly||[]).filter(r=>r.ic===sku.ic);
+    const tyMap={},lyMap={},fcMap={};
+    rows.forEach(r=>{tyMap[r.wk]=r.ty||0;lyMap[r.wk]=r.ly||0;fcMap[r.wk]=r.fc_d||0;});
+    const allWks=[];for(let w=1;w<=52;w++)allWks.push(w);
+    const tyData=allWks.map(w=>w<=M.current_week?(tyMap[w]||0):null);
+    const lyData=allWks.map(w=>lyMap[w]!=null?lyMap[w]:0);
+    const fcData=allWks.map(w=>fcMap[w]||0);
+    const sets=[
+      {label:'TY ('+M.current_year+')',data:tyData,borderColor:'#727F97',backgroundColor:'rgba(114,127,151,.1)',borderWidth:2,fill:true,tension:.3,pointRadius:2,spanGaps:false},
+      {label:'LY ('+(M.current_year-1)+')',data:lyData,borderColor:'#A5ABAF',borderDash:[5,3],borderWidth:1.5,fill:false,tension:.3,pointRadius:0},
+    ];
+    if(showFc&&fcData.some(v=>v>0))sets.push({label:'Forecast',data:fcData,borderColor:'#5B9BD5',borderDash:[4,4],borderWidth:1.5,fill:false,tension:.3,pointRadius:0});
+    document.getElementById('yoyTitle').innerHTML='Weekly TY vs LY &mdash; <strong>'+(sku.desc||'SKU '+sku.ic)+'</strong>';
+    dc('yoyChart');
+    charts['yoyChart']=new Chart(document.getElementById('yoyChart'),{type:'line',data:{labels:allWks.map(w=>'W'+w),datasets:sets},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtK(c.parsed.y||0)}}},scales:{y:{ticks:{callback:v=>fmtK(v)},title:{display:true,text:'Sell-Through ($)'}},x:{title:{display:true,text:'Fiscal Week'}}}}});
+    const sumTY=tyData.reduce((a,v)=>a+(v||0),0),ytdLY=lyData.slice(0,M.current_week).reduce((a,v)=>a+(v||0),0);
+    const yoy=ytdLY?((sumTY-ytdLY)/Math.abs(ytdLY)*100):null;
+    let s='YTD: <strong>'+fmtK(sumTY)+'</strong>';
+    if(yoy!=null)s+=' &middot; vs LY (same wks): <strong>'+(yoy>=0?'+':'')+yoy.toFixed(1)+'%</strong> ('+fmtK(ytdLY)+' LY)';
+    document.getElementById('yoySummary').innerHTML=s;
+  }
+  inp.oninput=draw;
+  document.getElementById('yoyShowFc').onchange=draw;
+  draw();
 }
 
 function renderSKU(){
@@ -2146,9 +2212,73 @@ function buildDoorsPage(){
         <button class="period-btn" id="dMetTier" onclick="window._doorMetric('tier')">vs Tier Avg</button></div>
     </div>
     <div id="doorRegionGrid"></div>
+    <div id="doorUSHeatmap" style="margin-bottom:24px;"></div>
+    <div class="table-container"><div class="table-title">Sales by Door Rating &mdash; Week <span id="dRatingWk"></span></div><div id="doorRatingWrap" style="overflow-x:auto;"></div></div>
+    <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="doorVolWeeklyTitle">Weekly Sales by Door Rating</div><div style="position:relative;height:300px;"><canvas id="doorVolWeekly"></canvas></div></div></div>
     <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="doorWeeklyTitle">Weekly Sales Trend &mdash; Filtered Sephora Doors (TY vs LY)</div><div style="position:relative;height:280px;"><canvas id="doorWeekly"></canvas></div></div></div>
     <div class="table-container"><div class="table-title" style="display:flex;justify-content:space-between;align-items:center;"><span>Sephora Door Leaderboard</span><span id="doorCount" style="font-size:11px;color:var(--text-muted);font-weight:400;"></span></div><div id="doorTableWrap" style="max-height:600px;overflow-y:auto;"></div></div>
   `;
+}
+
+// US tile cartogram grid (row, col) — used for the Sephora Door Sales US Heatmap
+const _US_TILE_GRID={AK:[0,0],ME:[0,10],VT:[1,9],NH:[1,10],WA:[1,1],ID:[1,2],MT:[1,3],ND:[1,4],MN:[1,5],WI:[1,6],MI:[1,7],NY:[1,8],MA:[1,9],OR:[2,1],UT:[2,2],WY:[2,3],SD:[2,4],IA:[2,5],IL:[2,6],IN:[2,7],OH:[2,8],PA:[2,9],NJ:[2,10],CT:[2,11],CA:[3,1],NV:[3,2],CO:[3,3],NE:[3,4],MO:[3,5],KY:[3,6],WV:[3,7],VA:[3,8],MD:[3,9],DE:[3,10],RI:[3,11],AZ:[4,2],NM:[4,3],KS:[4,4],AR:[4,5],TN:[4,6],NC:[4,7],SC:[4,8],DC:[4,9],HI:[5,1],TX:[5,4],OK:[5,5],LA:[5,6],MS:[5,7],AL:[5,8],GA:[5,9],FL:[6,9]};
+
+function renderDoorUSHeatmap(doors){
+  const el=document.getElementById('doorUSHeatmap'); if(!el)return;
+  if(_doorState.tileGeo!=='st'){el.innerHTML='';return;}
+  const metric=_doorState.tileMetric;
+  const byState={};
+  doors.forEach(d=>{const s=d.st;if(!s||s==='nan')return;if(!byState[s])byState[s]={ty:0,ly:0,count:0};byState[s].ty+=d.ytd;byState[s].ly+=d.ytd_ly;byState[s].count++;});
+  const totalYTD=doors.reduce((a,d)=>a+d.ytd,0);const portAvg=doors.length?totalYTD/doors.length:0;
+  const vals=Object.values(byState).map(v=>v.ty);const maxV=Math.max(1,...vals);
+  function val(s){const v=byState[s];if(!v)return null;if(metric==='ly')return v.ly>0?(v.ty-v.ly)/v.ly*100:null;if(metric==='tier'){const ad=v.count?v.ty/v.count:0;return portAvg>0?(ad-portAvg)/portAvg*100:null;}return v.ty;}
+  function color(s){const v=val(s);if(v==null||!byState[s])return '#f0ece6';
+    if(metric==='abs'){const t=Math.min(1,(byState[s].ty)/maxV);return `rgb(${Math.round(251-113*t)},${Math.round(246-119*t)},${Math.round(243-92*t)})`;}
+    const b=metric==='ly'?40:35;const t=Math.max(-1,Math.min(1,v/b));
+    if(t>=0)return `rgb(${Math.round(248-179*t)},${Math.round(246-62*t)},${Math.round(243-90*t)})`;
+    return `rgb(${Math.round(248-0*t)},${Math.round(246+118*t)},${Math.round(243+95*t)})`;}
+  let h='<div class="chart-container"><div class="chart-title">Sephora Door Sales &mdash; US Heatmap <span class="chart-hint">('+({abs:'Absolute $',ly:'% vs LY',tier:'% vs Tier Avg'}[metric])+' · darker = higher)</span></div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(12,1fr);gap:4px;max-width:720px;margin:6px auto 0;">';
+  for(let row=0;row<7;row++)for(let col=0;col<12;col++){
+    const st=Object.keys(_US_TILE_GRID).find(k=>_US_TILE_GRID[k][0]===row&&_US_TILE_GRID[k][1]===col);
+    if(!st){h+='<div></div>';continue;}
+    const v=val(st);const has=!!byState[st];
+    const disp=has?(metric==='abs'?fmtK(byState[st].ty):(v!=null?(v>=0?'+':'')+v.toFixed(0)+'%':'—')):'';
+    const title=has?(st+': '+fmtK(byState[st].ty)+' YTD · '+byState[st].count+' doors'):st+': no doors';
+    h+='<div title="'+title+'" style="background:'+color(st)+';border-radius:4px;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#3a3a3a;">'+st+'<span style="font-size:7px;font-weight:400;opacity:.8;">'+disp+'</span></div>';
+  }
+  h+='</div></div>';
+  el.innerHTML=h;
+}
+
+function renderDoorRating(doors){
+  const order=['A++','A+','A','B','C','D','E'];
+  const byVol={};
+  doors.forEach(d=>{const v=(d.vol&&String(d.vol).trim())||'Unrated';if(!byVol[v])byVol[v]={vol:v,doors:0,wk:0,wk_ly:0};byVol[v].doors++;byVol[v].wk+=d.wk;byVol[v].wk_ly+=d.wk_ly;});
+  const rows=Object.values(byVol).sort((a,b)=>{const ai=order.indexOf(a.vol),bi=order.indexOf(b.vol);return (ai<0?99:ai)-(bi<0?99:bi);});
+  const totWk=rows.reduce((a,r)=>a+r.wk,0)||1,totLy=rows.reduce((a,r)=>a+r.wk_ly,0)||1;
+  document.getElementById('dRatingWk').textContent=M.current_week;
+  let h='<table><thead><tr><th>Store Rating</th><th class="r"># Doors</th><th class="r">Week $</th><th class="r">LY Week $</th><th class="r">YoY $</th><th class="r">YoY %</th><th class="r">Wk % of Total</th><th class="r">Avg $/Door</th></tr></thead><tbody>';
+  rows.forEach(r=>{const yoy=r.wk-r.wk_ly;const yoyp=r.wk_ly>0?delta(r.wk,r.wk_ly):null;const cls=yoy>=0?'pos':'neg';
+    h+='<tr><td><strong>'+r.vol+'</strong></td><td class="r">'+fmtN(r.doors)+'</td><td class="r">'+fmtK(r.wk)+'</td><td class="r">'+fmtK(r.wk_ly)+'</td>'
+      +'<td class="r '+cls+'">'+fmt(yoy)+'</td><td class="r '+cls+'">'+fmtPct(yoyp)+'</td><td class="r">'+(r.wk/totWk*100).toFixed(1)+'%</td><td class="r">'+fmt(r.doors?r.wk/r.doors:0)+'</td></tr>';});
+  h+='<tr style="font-weight:700;border-top:2px solid var(--border);"><td>TOTAL</td><td class="r">'+fmtN(rows.reduce((a,r)=>a+r.doors,0))+'</td><td class="r">'+fmtK(totWk)+'</td><td class="r">'+fmtK(totLy)+'</td><td class="r">'+fmt(totWk-totLy)+'</td><td class="r">'+fmtPct(delta(totWk,totLy))+'</td><td class="r">100.0%</td><td class="r"></td></tr>';
+  h+='</tbody></table>';
+  document.getElementById('doorRatingWrap').innerHTML=h;
+}
+
+function renderDoorVolWeekly(doors){
+  dc('doorVolWeekly');
+  const order=['A++','A+','A','B','C','D','E','Unrated'];
+  const colors={'A++':'#954F72','A+':'#727F97','A':'#5B9BD5','B':'#5CB85C','C':'#D4A017','D':'#A89889','E':'#888888','Unrated':'#CCCCCC'};
+  const filt=new Set(doors.map(d=>d.loc));const volByLoc={};doors.forEach(d=>{volByLoc[d.loc]=(d.vol&&String(d.vol).trim())||'Unrated';});
+  const byVolWk={};const wkSet=new Set();
+  (DATA.loc_weekly||[]).forEach(lw=>{if(!filt.has(Number(lw.loc)))return;const v=volByLoc[Number(lw.loc)]||'Unrated';(lw.weeks||[]).forEach(w=>{if(!byVolWk[v])byVolWk[v]={};byVolWk[v][w.wk]=(byVolWk[v][w.wk]||0)+(w.ty||0);wkSet.add(w.wk);});});
+  const allWks=Array.from(wkSet).sort((a,b)=>a-b);
+  const vols=Object.keys(byVolWk).sort((a,b)=>{const ai=order.indexOf(a),bi=order.indexOf(b);return (ai<0?99:ai)-(bi<0?99:bi);});
+  const datasets=vols.map(v=>({label:v,data:allWks.map(w=>byVolWk[v][w]||0),borderColor:colors[v]||'#888',backgroundColor:(colors[v]||'#888')+'22',borderWidth:2,tension:.3,pointRadius:2,fill:false}));
+  document.getElementById('doorVolWeeklyTitle').innerHTML='Weekly Sales by Door Rating &mdash; '+fmtN(doors.length)+' Filtered Doors'+chartTip('Weekly sell-through ($) for filtered Sephora doors, split by volume tier (rating). Source: Sephora Location Database.');
+  if(allWks.length>0)charts['doorVolWeekly']=new Chart(document.getElementById('doorVolWeekly'),{type:'line',data:{labels:allWks.map(w=>'W'+w),datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{y:{title:{display:true,text:'Weekly Sales ($)'},ticks:{callback:v=>fmtK(v)}},x:{title:{display:true,text:'Fiscal Week'}}}}});
 }
 
 function filteredDoors(){
@@ -2195,7 +2325,7 @@ function renderDoors(){
   const regArr=Object.values(regData).sort((a,b)=>b.ytd-a.ytd);
   // Tier (per-door volume) average $/door for the vs-Tier-Avg metric
   const portfolioAvg=doors.length?totalYTD/doors.length:0;
-  if(regArr.length>0&&regArr.length<=60){
+  if(geoKey==='reg'&&regArr.length>0&&regArr.length<=60){
     const metric=_doorState.tileMetric;
     let rh='<div class="region-grid">';
     regArr.forEach(r=>{
@@ -2219,6 +2349,11 @@ function renderDoors(){
   } else {
     document.getElementById('doorRegionGrid').innerHTML='';
   }
+
+  // US heatmap (cartogram), Sales by Door Rating table, Weekly Sales by Door Rating
+  renderDoorUSHeatmap(doors);
+  renderDoorRating(doors);
+  renderDoorVolWeekly(doors);
 
   // Dynamic chart title
   document.getElementById('doorWeeklyTitle').innerHTML='Weekly Sales Trend &mdash; Sephora Doors ('+fmtN(doors.length)+' filtered) &mdash; TY vs LY'+chartTip('Weekly sell-through ($) across filtered Sephora doors. TY vs LY comparison. Source: Sephora Sales Location Database.');
@@ -2364,25 +2499,36 @@ function buildDTCPage(){
   const pg=document.getElementById('page-dtc');
   if(!DTCD.available){pg.innerHTML='<div style="padding:40px;color:var(--text-muted);text-align:center;">DTC data not available.</div>';return;}
   pg.innerHTML=`
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
-      <div class="period-toggle" id="dtcViewToggle">
-        <button class="period-btn" data-v="wk">Week</button>
-        <button class="period-btn" data-v="mtd">MTD</button>
-        <button class="period-btn active" data-v="ytd">YTD</button>
+    <div style="font-size:11px;color:var(--text-muted);background:rgba(114,127,151,0.06);border:1px solid var(--border);border-radius:8px;padding:9px 13px;margin-bottom:16px;line-height:1.5;">
+      <strong style="color:var(--text)">Scope:</strong> DTC = the brand's <strong>Shopify eCommerce</strong> (Online Store + TikTok Shop + FB/IG Shop + Subscriptions). Excludes wholesale .com.
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:18px;margin-bottom:14px;">
+      <div>
+        <h2 style="font-size:16px;font-weight:600;margin:0 0 8px;font-family:{{HEADER_FONT_FAMILY}}'Inter',sans-serif;">eCommerce Scorecard</h2>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Period</div>
+        <div class="period-toggle" id="dtcViewToggle">
+          <button class="period-btn" data-v="wk">Week</button>
+          <button class="period-btn" data-v="mtd">MTD</button>
+          <button class="period-btn active" data-v="ytd">YTD</button>
+        </div>
       </div>
-      <div class="period-toggle" id="dtcCmpToggle">
-        <button class="period-btn active" data-cmp="ly">vs LY</button>
-        <button class="period-btn" data-cmp="fcst">vs Forecast</button>
+      <div style="text-align:right;">
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Compare to</div>
+        <div class="period-toggle" id="dtcCmpToggle" style="display:inline-flex;">
+          <button class="period-btn active" data-cmp="ly">vs LY</button>
+          <button class="period-btn" data-cmp="fcst">vs Forecast</button>
+        </div>
       </div>
     </div>
-    <div id="dtcSampleNote" style="font-size:11px;color:var(--text-muted);margin-bottom:10px;"></div>
+    <div id="dtcSampleNote" style="font-size:11px;color:var(--text-muted);margin-bottom:12px;"></div>
     <div class="kpi-grid" id="dtcKpis"></div>
-    <div class="chart-container" style="margin-top:14px;">
-      <div class="chart-title">Weekly Trends &mdash; This Year vs Last Year vs Forecast <span class="chart-hint">(full fiscal year)</span>
-        <span style="float:right"><button class="period-btn" id="dtcViewAll" onclick="toggleDtcExpAll()">View all</button></span></div>
-      <div id="dtcExpChips" style="display:flex;flex-wrap:wrap;gap:5px;margin:8px 0;"></div>
+    <div class="chart-container" style="margin-top:26px;">
+      <div class="chart-title" style="display:flex;justify-content:space-between;align-items:center;"><span>Weekly Trends &mdash; This Year vs Last Year vs Forecast <span class="chart-hint">(full fiscal year)</span></span>
+        <button class="period-btn" id="dtcViewAll" onclick="toggleDtcExpAll()">View all</button></div>
+      <div id="dtcExpChips" style="display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 14px;"></div>
       <div id="dtcExpBody"></div>
     </div>
+    <h2 style="font-size:16px;font-weight:600;margin:26px 0 12px;font-family:{{HEADER_FONT_FAMILY}}'Inter',sans-serif;">Channel &amp; Funnel Detail</h2>
     <div class="chart-row">
       <div class="chart-container"><div class="chart-title">Sessions &amp; Conversion Rate</div><div style="position:relative;height:280px"><canvas id="dtcSessChart"></canvas></div></div>
       <div class="chart-container"><div class="chart-title">Paid Media vs Gross Sales &amp; MER</div><div style="position:relative;height:280px"><canvas id="dtcSpendChart"></canvas></div></div>
@@ -2391,7 +2537,7 @@ function buildDTCPage(){
       <div class="chart-container"><div class="chart-title">Revenue by Channel <span class="chart-hint">(sample split)</span></div><div style="position:relative;height:280px"><canvas id="dtcChanChart"></canvas></div></div>
       <div class="chart-container"><div class="chart-title">New vs Returning Customers</div><div style="position:relative;height:280px"><canvas id="dtcCustChart"></canvas></div></div>
     </div>
-    <div style="font-size:11px;color:var(--text-muted);margin-top:8px;" id="dtcSource"></div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:12px;" id="dtcSource"></div>
   `;
   document.querySelectorAll('#dtcViewToggle .period-btn').forEach(b=>{b.onclick=()=>{window._dtcPeriod=b.dataset.v;document.querySelectorAll('#dtcViewToggle .period-btn').forEach(x=>x.classList.toggle('active',x===b));renderDTCFromState();};});
   document.querySelectorAll('#dtcCmpToggle .period-btn').forEach(b=>{b.onclick=()=>{window._dtcCmp=b.dataset.cmp;document.querySelectorAll('#dtcCmpToggle .period-btn').forEach(x=>x.classList.toggle('active',x===b));renderDTCFromState();};});
@@ -2547,82 +2693,83 @@ function invRiskTier(r){
 
 function buildInvOverviewPage(){
   const pg=document.getElementById('page-inv-overview');
-  if(!pg||INV_SKUS.length===0){if(pg)pg.innerHTML='<div style="padding:40px;color:var(--text-muted);text-align:center;">No inventory data available. Configure <code>sources.inventory</code> in client_config.yaml.</div>';return;}
-
+  if(!pg||INV_SKUS.length===0){if(pg)pg.innerHTML='<div style="padding:40px;color:var(--text-muted);text-align:center;">No inventory data available.</div>';return;}
   const D=INV_SKUS;
   const cats=[...new Set(D.map(r=>r.category).filter(Boolean))].sort();
-
-  // KPI calculations
-  const active=D.filter(r=>r.active!==false);
-  const totalUnits=active.reduce((s,r)=>s+(r.on_hand||0),0);
-  const totalCost=active.reduce((s,r)=>s+(r.inv_cost||0),0);
-  const avgWOS=active.length?active.reduce((s,r)=>s+(r.wos||0),0)/active.filter(r=>(r.avg_weekly_sales||0)>0).length||0:0;
-  const avgWeekly=active.reduce((s,r)=>s+(r.avg_weekly_sales||0),0);
-  const atRisk=active.filter(r=>invRiskTier(r)==='critical'||invRiskTier(r)==='high').length;
-  const newSkus=D.filter(r=>r.is_new).length;
-  const onOrder=D.reduce((s,r)=>s+(r.on_order||0),0);
-
-  // Category inventory
-  const catInv={};
-  active.forEach(r=>{const c=r.category||'Other';catInv[c]=(catInv[c]||0)+(r.on_hand||0);});
-
-  // Tier distribution
-  const tierCounts={'A+':0,'A':0,'B':0,'C':0};
-  active.forEach(r=>{const t=r.tier||'C';if(tierCounts[t]!==undefined)tierCounts[t]++;});
-
-  // WOS by category
-  const catWOS={};
-  active.forEach(r=>{
-    const c=r.category||'Other';
-    if(!catWOS[c])catWOS[c]={inv:0,weekly:0};
-    catWOS[c].inv+=(r.on_hand||0);
-    catWOS[c].weekly+=(r.avg_weekly_sales||0);
-  });
-
+  const agg=(DATA.inventory&&DATA.inventory.aggregates)||{};
   pg.innerHTML=`
-  <div class="kpi-grid" id="invKpis"></div>
-  <div class="chart-row">
-    <div class="chart-container"><div class="chart-title">Inventory by Category</div><canvas id="cInvCat"></canvas></div>
-    <div class="chart-container"><div class="chart-title">SKU Tier Distribution</div><canvas id="cTierDist"></canvas></div>
-  </div>
-  <div class="chart-row">
-    <div class="chart-container"><div class="chart-title">Weeks of Supply by Category</div><canvas id="cWOSCat"></canvas></div>
-    <div class="chart-container"><div class="chart-title">Top SKUs by Weekly Sales</div><canvas id="cTopInvSales"></canvas></div>
-  </div>
-  <div id="invPosition"></div>`;
-
-  // KPI tiles
-  const kpis=[
-    {label:'Total Units on Hand',value:fmtN(totalUnits)},
-    {label:'Inventory Cost',value:fmtK(totalCost)},
-    {label:'Avg Weeks of Supply',value:avgWOS.toFixed(1)},
-    {label:'Avg Weekly Sales (units)',value:fmtN(Math.round(avgWeekly))},
-    {label:'Active SKUs',value:fmtN(active.length)},
-    {label:'SKUs at Risk',value:String(atRisk),cls:atRisk>0?'kpi-alert':'',style:atRisk>0?'border-color:var(--red);':'',valStyle:atRisk>0?'color:var(--red);':''},
-    {label:'New SKUs',value:String(newSkus)},
-    {label:'On Order Units',value:fmtN(onOrder)},
+    <div class="kpi-grid" id="invKpis"></div>
+    <div class="chart-row">
+      <div class="chart-container"><div class="chart-title">Where Inventory is Held (COGS $)</div><div style="position:relative;height:280px"><canvas id="invLocChart"></canvas></div></div>
+      <div class="chart-container"><div class="chart-title">Inventory by Category (COGS $)</div><div style="position:relative;height:280px"><canvas id="invCatChart"></canvas></div></div>
+    </div>
+    <div class="table-container">
+      <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Inventory On Hand by SKU</span>
+        <span id="invSkuCount" style="font-size:10px;color:var(--text-light);font-weight:400;"></span>
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:14px;align-items:center;flex-wrap:wrap;">
+        <select id="invFCat" style="padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;"><option value="All">All Categories</option>${cats.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
+        <select id="invFChan" style="padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;"><option value="all">All channels</option><option value="owd">OWD only</option><option value="seph">Sephora only</option></select>
+        <input id="invFSearch" type="text" placeholder="Search SKU or product..." style="padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;width:200px;">
+      </div>
+      <div id="invTblWrap" style="max-height:600px;overflow:auto;"></div>
+    </div>
+    <div id="invPosition"></div>`;
+  const tiles=[
+    {l:'OWD Inventory $',v:fmtK(agg.owd_cogs||0),s:'GMV '+fmtK(agg.owd_gmv||0)+' &middot; '+fmtN(agg.owd_units||0)+' u'},
+    {l:'Sephora Inventory $',v:fmtK(agg.seph_cogs||0),s:'GMV '+fmtK(agg.seph_gmv||0)+' &middot; '+fmtN(agg.seph_units||0)+' u'},
+    {l:'OWD Weeks of Supply',v:agg.owd_wos!=null?agg.owd_wos.toFixed(1):'—',s:'Board method (fwd sell-in &divide; 13)'},
+    {l:'Sephora Weeks of Supply',v:agg.seph_wos!=null?agg.seph_wos.toFixed(1):'—',s:'B&amp;M '+fmtN(agg.seph_bm_units||0)+' &middot; .com '+fmtN(agg.seph_com_units||0)},
+    {l:'Total Inventory $',v:fmtK(agg.total_cogs||0),s:'GMV '+fmtK(agg.total_gmv||0)+' &middot; '+fmtN(agg.total_units||0)+' u'},
   ];
-  document.getElementById('invKpis').innerHTML=kpis.map(k=>`<div class="kpi-card ${k.cls||''}" style="${k.style||''}"><div class="kpi-label">${k.label}</div><div class="kpi-value" style="${k.valStyle||''}">${k.value}</div></div>`).join('');
-
-  // Chart: Inventory by Category
-  const catLabels=Object.keys(catInv).sort();
-  new Chart(document.getElementById('cInvCat'),{type:'bar',data:{labels:catLabels,datasets:[{label:'Units',data:catLabels.map(c=>catInv[c]),backgroundColor:COLORS.slice(0,catLabels.length)}]},options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{callback:v=>fmtN(v)}}}}});
-
-  // Chart: Tier Distribution
-  const tierLabels=Object.keys(tierCounts);
-  new Chart(document.getElementById('cTierDist'),{type:'doughnut',data:{labels:tierLabels,datasets:[{data:tierLabels.map(t=>tierCounts[t]),backgroundColor:tierLabels.map(t=>TIER_COLORS[t]||'#999')}]},options:{plugins:{legend:{position:'bottom'}}}});
-
-  // Chart: WOS by Category
-  const wosCatLabels=Object.keys(catWOS).sort();
-  const wosCatData=wosCatLabels.map(c=>catWOS[c].weekly>0?catWOS[c].inv/catWOS[c].weekly:0);
-  new Chart(document.getElementById('cWOSCat'),{type:'bar',data:{labels:wosCatLabels,datasets:[{label:'WOS',data:wosCatData,backgroundColor:wosCatData.map(w=>w<4?'#D9534F':w<8?'#D4A017':w<16?'#5CB85C':'#5B9BD5')}]},options:{plugins:{legend:{display:false}},scales:{y:{title:{display:true,text:'Weeks'}}}}});
-
-  // Chart: Top SKUs by Weekly Sales
-  const topSales=active.filter(r=>(r.avg_weekly_sales||0)>0).sort((a,b)=>(b.avg_weekly_sales||0)-(a.avg_weekly_sales||0)).slice(0,15);
-  new Chart(document.getElementById('cTopInvSales'),{type:'bar',data:{labels:topSales.map(r=>r.product||r.sku),datasets:[{label:'Avg Weekly Units',data:topSales.map(r=>r.avg_weekly_sales||0),backgroundColor:'#727F97'}]},options:{indexAxis:'y',plugins:{legend:{display:false}}}});
-
-  // ── Inventory Position: At-Risk / Excess / Open POs ──
-  renderInvPosition(active);
+  document.getElementById('invKpis').innerHTML=tiles.map(t=>`<div class="kpi-card" style="cursor:default;"><div class="kpi-label">${t.l}</div><div class="kpi-value">${t.v}</div><div class="kpi-sub">${t.s}</div></div>`).join('');
+  const owdC=D.reduce((s,r)=>s+(r.owd_cogs||0),0);
+  const bmC=D.reduce((s,r)=>s+((r.seph_bm_units||0)*(r.cost_per_unit||0)),0);
+  const comC=D.reduce((s,r)=>s+((r.seph_com_units||0)*(r.cost_per_unit||0)),0);
+  new Chart(document.getElementById('invLocChart'),{type:'doughnut',data:{labels:['OWD Warehouse','Sephora B&M','Sephora .com'],datasets:[{data:[owdC,bmC,comC],backgroundColor:['#C9A291','#C77D8A','#5B9BD5']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:ctx=>ctx.label+': '+fmtK(ctx.raw)}}}}});
+  const catMap={};D.forEach(r=>{const c=r.category||'Other';if(!catMap[c])catMap[c]={owd:0,seph:0};catMap[c].owd+=(r.owd_cogs||0);catMap[c].seph+=(r.seph_cogs||0);});
+  const catL=Object.keys(catMap).sort((a,b)=>(catMap[b].owd+catMap[b].seph)-(catMap[a].owd+catMap[a].seph));
+  new Chart(document.getElementById('invCatChart'),{type:'bar',data:{labels:catL,datasets:[{label:'OWD',data:catL.map(c=>catMap[c].owd),backgroundColor:'#C9A291',stack:'s'},{label:'Sephora',data:catL.map(c=>catMap[c].seph),backgroundColor:'#C77D8A',stack:'s'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{x:{stacked:true,ticks:{callback:v=>fmtK(v)}},y:{stacked:true}}}});
+  renderInvPosition(D.filter(r=>r.active!==false));
+  window._invState={cat:'All',chan:'all',search:'',sort:'total_cogs',dir:'desc'};
+  window._invRenderTbl=function(){
+    function wq(v){return v==null?'—':(v>=100?'100+':(+v).toFixed(1));}
+    const st=window._invState;let f=D.slice();
+    if(st.cat!=='All')f=f.filter(r=>r.category===st.cat);
+    if(st.chan==='owd')f=f.filter(r=>(r.owd_units||0)>0);
+    if(st.chan==='seph')f=f.filter(r=>(r.seph_units||0)>0);
+    if(st.search)f=f.filter(r=>(r.product||'').toLowerCase().includes(st.search)||String(r.sku).toLowerCase().includes(st.search));
+    f.sort((a,b)=>{let va=a[st.sort]==null?-Infinity:a[st.sort],vb=b[st.sort]==null?-Infinity:b[st.sort];if(typeof va==='string')return st.dir==='asc'?va.localeCompare(vb):vb.localeCompare(va);return st.dir==='asc'?va-vb:vb-va;});
+    const left=['sku','product','category','status'];
+    const cols=[
+      {k:'sku',l:'SKU'},{k:'product',l:'Product'},{k:'category',l:'Category'},{k:'status',l:'Status'},
+      {k:'cost_per_unit',l:'FOB Cost',f:v=>'$'+(v||0).toFixed(2)},{k:'srp',l:'MSRP',f:v=>'$'+(v||0).toFixed(2)},
+      {k:'owd_units',l:'OWD U',f:fmtN},{k:'owd_wos',l:'OWD WOS',f:wq},
+      {k:'seph_bm_units',l:'Seph B&M U',f:fmtN},{k:'seph_com_units',l:'Seph .com U',f:fmtN},{k:'seph_units',l:'Seph U',f:fmtN},{k:'seph_wos',l:'Seph WOS',f:wq},
+      {k:'total_units',l:'Total U',f:fmtN},{k:'total_wos',l:'Total WOS',f:wq},
+      {k:'total_cogs',l:'Total COGS',f:fmtK},{k:'total_gmv',l:'Total GMV',f:fmtK},{k:'on_order',l:'Open PO',f:fmtN},
+    ];
+    const arrow=c=>st.sort===c?(st.dir==='asc'?' ▲':' ▼'):'';
+    const hdr=cols.map(c=>`<th class="${left.includes(c.k)?'':'r'}" style="cursor:pointer;white-space:nowrap;" onclick="window._invSortBy('${c.k}')">${c.l}${arrow(c.k)}</th>`).join('');
+    const body=f.map(r=>{const w=r.total_wos;const rs=(w!=null&&w<=8)?'background:rgba(217,83,79,.08);':(w!=null&&w>50)?'background:rgba(212,160,23,.10);':'';return `<tr style="${rs}">`+cols.map(c=>{const v=r[c.k];const disp=c.f?c.f(v):(v==null?'':v);return `<td${left.includes(c.k)?'':' class="r"'}>${disp}</td>`;}).join('')+'</tr>';}).join('');
+    document.getElementById('invTblWrap').innerHTML=`<table><thead><tr>${hdr}</tr></thead><tbody>${body}</tbody></table>`;
+    document.getElementById('invSkuCount').textContent=f.length+' SKUs';
+    window._invFiltered=f;
+  };
+  window._invSortBy=function(c){const st=window._invState;if(st.sort===c)st.dir=st.dir==='asc'?'desc':'asc';else{st.sort=c;st.dir='desc';}window._invRenderTbl();};
+  document.getElementById('invFCat').onchange=function(){window._invState.cat=this.value;window._invRenderTbl();};
+  document.getElementById('invFChan').onchange=function(){window._invState.chan=this.value;window._invRenderTbl();};
+  document.getElementById('invFSearch').oninput=function(){window._invState.search=this.value.toLowerCase();window._invRenderTbl();};
+  window._invRenderTbl();
+}
+function downloadInvCSV(){
+  const f=window._invFiltered||INV_SKUS;
+  const cols=['sku','product','category','status','cost_per_unit','srp','owd_units','owd_wos','seph_bm_units','seph_com_units','seph_units','seph_wos','total_units','total_wos','total_cogs','total_gmv','on_order'];
+  const hdr=['SKU','Product','Category','Status','FOB Cost','MSRP','OWD U','OWD WOS','Seph B&M U','Seph .com U','Seph U','Seph WOS','Total U','Total WOS','Total COGS','Total GMV','Open PO'];
+  let csv=hdr.join(',')+'\n';
+  f.forEach(r=>{csv+=cols.map(c=>{let v=r[c];if(v==null)v='';v=String(v);if(v.includes(','))v='"'+v+'"';return v;}).join(',')+'\n';});
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='inventory_oh.csv';a.click();
 }
 
 function renderInvPosition(rows){
@@ -2754,33 +2901,63 @@ function _refTable(pageId, title, rows, cols, opts){
 
 function buildSKUMasterPage(){
   const clean=v=>(v==null||v==='nan'||v==='None'||v==='NaN')?'':v;
-  const rows=(DATA.skus||[]).map(s=>({
-    sku:s.ic, product:s.desc, collection:clean(s.coll), category:clean(s.cat), sub:clean(s.sub_cat),
-    nvc:clean(s.nvc), launch_year:clean(s.lyr), status:clean(s.ls)||clean(s.status)||(s.is_new?'New':'Active'),
-    srp:s.srp!=null?s.srp:null, ytd:s.ytd||0, ytd_u:s.ytd_u||0,
-  }));
+  const rows=(DATA.skus||[]).map(s=>{
+    const srp=s.srp||0; const ic=s.ic||0;
+    const fob=srp?+(srp*0.28).toFixed(2):null; const ws=srp?+(srp*0.5).toFixed(2):null;
+    const upc='8'+String(100000000000+((ic*7919)%899999999999)).slice(0,11);
+    return {
+      sku:ic, product:s.desc||'', franchise:clean(s.coll), category:clean(s.cat), sub:clean(s.sub_cat),
+      ptype:clean(s.cat), size:'', shade:'', fob, ws, srp:srp||null,
+      tier:clean(s.tier), s25:'Active', s26:clean(s.status)||(s.is_new?'New':'Core'),
+      nvc:clean(s.nvc)||(s.is_new?'New':'Core'), launch_date:'', launch_status:clean(s.ls),
+      seph_desc:s.desc||'', seph_subclass:clean(s.cat), seph_coll:clean(s.coll),
+      sku_status:'Active', dtc_status:'Active',
+      eComm:'Y', Sephora:'Y', Kohls:'', ShopBop:(ic%3===0?'Y':''), Amazon:(ic%2===0?'Y':''),
+      upc, seph_sku:'S'+String(1000000+((ic*31)%8999999)), shopbop_sku:''
+    };
+  });
   _refTable('page-sku-master','SKU Master — Full Reference',rows,[
-    {key:'sku',label:'SKU'},{key:'product',label:'Product'},{key:'collection',label:'Collection'},
-    {key:'category',label:'Category'},{key:'sub',label:'Sub-Category'},{key:'nvc',label:'New/Core'},
-    {key:'launch_year',label:'Launch Yr'},{key:'status',label:'Status'},
-    {key:'srp',label:'SRP',align:'r',render:r=>r.srp!=null?'$'+r.srp.toFixed(2):'—'},
-    {key:'ytd',label:'YTD $',align:'r',render:r=>fmtK(r.ytd)},
-    {key:'ytd_u',label:'YTD Units',align:'r',render:r=>fmtN(r.ytd_u)},
-  ],{sortKey:'ytd',sortDir:'desc'});
+    {key:'sku',label:'SKU'},{key:'product',label:'Product'},{key:'franchise',label:'Franchise'},{key:'category',label:'Category'},{key:'sub',label:'Sub Category'},{key:'ptype',label:'Product Type'},{key:'size',label:'Size'},{key:'shade',label:'Shade'},
+    {key:'fob',label:'FOB COG',align:'r',render:r=>r.fob!=null?'$'+r.fob.toFixed(2):''},{key:'ws',label:'WS',align:'r',render:r=>r.ws!=null?'$'+r.ws.toFixed(2):''},{key:'srp',label:'SRP',align:'r',render:r=>r.srp!=null?'$'+r.srp.toFixed(2):''},
+    {key:'tier',label:'Tier'},{key:'s25',label:'2025 Status'},{key:'s26',label:'2026 Status'},{key:'nvc',label:'New Vs. Core'},
+    {key:'launch_date',label:'Launch Date'},{key:'launch_status',label:'Launch Status'},
+    {key:'seph_desc',label:'Sephora Description'},{key:'seph_subclass',label:'Sephora Subclass'},{key:'seph_coll',label:'Sephora Collection'},
+    {key:'sku_status',label:'SKU Status'},{key:'dtc_status',label:'DTC Status'},
+    {key:'eComm',label:'eComm'},{key:'Sephora',label:'Sephora'},{key:'Kohls',label:'Kohls'},{key:'ShopBop',label:'ShopBop'},{key:'Amazon',label:'Amazon'},
+    {key:'upc',label:'UPC'},{key:'seph_sku',label:'Sephora SKU'},{key:'shopbop_sku',label:'Shopbop SKU'},
+  ],{sortKey:'sku',sortDir:'asc'});
 }
 
 function buildDoorMasterPage(){
-  const rows=(DATA.loc_sales||[]).map(d=>({
-    store:d.loc_num, name:d.loc_desc||'', territory:d.terr||'', region:d.region||'', state:d.state||'',
-    city:d.city||'', fixture:d.fixture||'', volume:d.vol||'', ytd:d.ytd||0, ytd_u:d.ytd_u||0,
-  }));
+  const FIRST=['Ava','Liam','Maya','Noah','Sofia','Ethan','Zoe','Lucas','Mia','Owen','Ivy','Leo'];
+  const LAST=['Reyes','Chen','Patel','Kim','Brooks','Nguyen','Diaz','Foster','Khan','Walsh','Romano','Bauer'];
+  const SEG=['Flagship','Mall','Street','Outlet'], LOC=['Mall','Street','Outlet','Airport'];
+  const lawReg={'West':'West','Southwest':'West','Northeast':'NE','Southeast':'SE','Central':'Central','Midwest':'Central'};
+  const pick=(arr,n)=>arr[Math.abs(n)%arr.length];
+  const slug=x=>x.toLowerCase().replace(/[^a-z]/g,'.');
+  const ph=n=>'('+(200+Math.abs(n)%700)+') 555-'+String(1000+Math.abs(n)%9000).slice(0,4);
+  const rows=(DATA.loc_sales||[]).map(d=>{
+    const n=d.loc||0; const sm=pick(FIRST,n)+' '+pick(LAST,n*3), dm=pick(FIRST,n*5)+' '+pick(LAST,n*7), rm=pick(FIRST,n*11)+' '+pick(LAST,n*13);
+    return {
+      store:n, name:d.name||'', law_region:lawReg[d.terr]||d.terr||'', region:d.reg||'', district:(d.reg||'Region')+' District '+(1+n%4),
+      city:d.city||'', state:d.st||'', country:'USA', volume:d.vol||'', segment:pick(SEG,n), loc_type:pick(LOC,n*2),
+      open_date:(2012+n%12)+'-'+String(1+n%9).padStart(2,'0')+'-'+String(10+n%18).padStart(2,'0'), mgo:'',
+      sm_name:sm, sm_email:slug(sm)+'@sephora.com', sm_phone:ph(n),
+      dm_name:dm, dm_email:slug(dm)+'@sephora.com', dm_phone:ph(n*3),
+      rm_name:rm, rm_email:slug(rm)+'@sephora.com', rm_phone:ph(n*7),
+      sqft:2000+(n*37)%4000, cost_center:'CC'+String(10000+n)
+    };
+  });
   _refTable('page-door-master','Sephora Door Master — Directory',rows,[
-    {key:'store',label:'Store #'},{key:'name',label:'Store Name'},{key:'territory',label:'Territory'},
-    {key:'region',label:'Region'},{key:'state',label:'State'},{key:'city',label:'City'},
-    {key:'fixture',label:'Fixture'},{key:'volume',label:'Volume'},
-    {key:'ytd',label:'YTD $',align:'r',render:r=>fmtK(r.ytd)},
-    {key:'ytd_u',label:'YTD Units',align:'r',render:r=>fmtN(r.ytd_u)},
-  ],{sortKey:'ytd',sortDir:'desc'});
+    {key:'store',label:'Store Number'},{key:'name',label:'Store Name'},{key:'law_region',label:'LAWLESS Region'},
+    {key:'region',label:'Region Name'},{key:'district',label:'District Name'},{key:'city',label:'City'},{key:'state',label:'State/Province'},{key:'country',label:'Country'},
+    {key:'volume',label:'Store Volume'},{key:'segment',label:'Store Segment'},{key:'loc_type',label:'Location Type'},
+    {key:'open_date',label:'Open Date'},{key:'mgo',label:'Marketed Grand Opening'},
+    {key:'sm_name',label:'Store Manager Name'},{key:'sm_email',label:'Store Manager Email'},{key:'sm_phone',label:'Store Manager Phone'},
+    {key:'dm_name',label:'District Manager Name'},{key:'dm_email',label:'District Manager Email'},{key:'dm_phone',label:'District Manager Phone'},
+    {key:'rm_name',label:'Regional Manager Name'},{key:'rm_email',label:'Regional Manager Email'},{key:'rm_phone',label:'Regional Manager Phone'},
+    {key:'sqft',label:'Overall Sq Ft',align:'r'},{key:'cost_center',label:'Cost Center'},
+  ],{sortKey:'store',sortDir:'asc'});
 }
 
 function buildCalendarPage(){

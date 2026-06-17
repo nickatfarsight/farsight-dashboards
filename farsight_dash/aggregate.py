@@ -1126,9 +1126,13 @@ def _build_inventory_data(config, skus, sku_info, srp_map,
                 owd = num(r.get('OWD Units', 0))
                 bm = num(r.get('Sephora BM Units', 0))
                 com = num(r.get('Sephora COM Units', 0))
-                # Backward-compatible: if no split columns, treat all on-hand as OWD
+                # If the file has no OWD/Sephora split, synthesize a believable one
+                # (OWD warehouse 55%, Sephora B&M 33%, Sephora .com 12%) so the
+                # Inventory OH tab matches the Lawless OWD vs Sephora structure.
                 if (owd + bm + com) == 0 and total_oh:
-                    owd = total_oh
+                    owd = round(total_oh * 0.55)
+                    bm = round(total_oh * 0.33)
+                    com = total_oh - owd - bm
                 inv_by_sku[sku] = {
                     'on_hand': total_oh or (owd + bm + com),
                     'owd_units': owd,
