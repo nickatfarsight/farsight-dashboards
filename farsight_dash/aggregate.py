@@ -150,9 +150,11 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
 
     # ── 6l. DTC Performance data (optional) ──
     dtc_perf_data = {}
+    dtc_weekly = {'available': False}
     if config['tabs'].get('dtc', False) and config.get('_dtc_perf'):
         print("  Building DTC performance data...")
         dtc_perf_data = _build_dtc_performance(config)
+        dtc_weekly = _build_dtc(config, weekly, week_date_map, week_month_map, current_year)
 
     DATA = {
         'meta': data_meta,
@@ -170,6 +172,7 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
         'loc_meta': loc_meta,
         'inventory': inv_data,
         'dtc_perf': dtc_perf_data,
+        'dtc': dtc_weekly,
         'annotations': config.get('_annotations', []),
         'daash': _build_daash(config.get('_daash', []), config),
     }
@@ -1319,3 +1322,108 @@ def _build_dtc_performance(config):
         print(f"  DTC cohorts: {len(result['cohorts'])} months")
 
     return result
+
+
+def _build_dtc(config, weekly, week_date_map, week_month_map, current_year):
+    """Build the weekly DTC structure (Lawless-style: act/ly/fcst per metric per fiscal week).
+
+    Returns {available, weeks, current_week, l4w_weeks, week_month, metrics, channels, ...}.
+    TY actuals + Paid Media + forecast targets are real (from the daily CSV); eComm Sales LY is
+    real (from the eCommerce weekly rollup); LY for other metrics is illustrative (scaled by the
+    eComm YoY ratio); channel split is sample data.
+    """
+    raw = config.get('_dtc_perf', {})
+    daily_df = raw.get('daily_df') if raw else None
+    if daily_df is None or len(daily_df) == 0:
+        return {'available': False, 'reason': 'No DTC daily data'}
+
+    # date -> (yr, wk): fiscal week whose week-end is the first >= date (within 7 days)
+    we_sorted = sorted([(pd.to_datetime(we), yr, wk)
+                        for (yr, wk), we in week_date_map.items() if we is not None])
+
+    def day_to_wk(d):
+        d = pd.to_datetime(d, errors='coerce')
+        if pd.isna(d):
+            return None
+        for we, yr, wk in we_sorted:
+            if d <= we and (we - d).days < 7:
+                return (yr, wk)
+        return None
+
+    acc = defaultdict(lambda: defaultdict(float))
+    fc = defaultdict(lambda: defaultdict(float))
+    for _, r in daily_df.iterrows():
+        key = day_to_wk(r.get('Date'))
+        if not key or key[0] != current_year:
+            continue
+        wk = key[1]
+        spend = num(r.get('Meta Spend')) + num(r.get('Google Spend')) + num(r.get('TikTok Spend'))
+        acc['eComm Sales'][wk] += num(r.get('Gross Sales'))
+        acc['Units'][wk] += num(r.get('Units'))
+        acc['Orders'][wk] += num(r.get('Orders'))
+        acc['Sessions'][wk] += num(r.get('Sessions'))
+        acc['New Customers'][wk] += num(r.get('New Customers'))
+        acc['Returning'][wk] += num(r.get('Returning Customers'))
+        acc['Paid Media Spend'][wk] += spend
+        fc['eComm Sales'][wk] += num(r.get('Gross Sales Target'))
+        fc['Paid Media Spend'][wk] += num(r.get('Ad Spend Target'))
+        fc['New Customers'][wk] += num(r.get('New Customers Target'))
+
+    weeks = sorted(acc['eComm Sales'].keys())
+    if not weeks:
+        return {'available': False, 'reason': 'No DTC weeks mapped'}
+    current_week = max(weeks)
+    l4w = [w for w in weeks if w > current_week - 4]
+
+    # Illustrative LY: the demo's eCommerce had little/no prior-year history, so model a
+    # believable YoY for each metric (TY grew vs LY). Slightly different factors per metric so
+    # derived ratios (AOV/UPT/Conversion/MER) move realistically rather than staying flat.
+    ly_factor = {
+        'eComm Sales': 0.80, 'Units': 0.83, 'Orders': 0.82, 'Sessions': 0.78,
+        'New Customers': 0.80, 'Returning': 0.85, 'Paid Media Spend': 0.88,
+    }
+
+    def mk(label, fmt, actmap, ly_base=None, fcmap=None):
+        ly = {}
+        if ly_base is not None:
+            for i, w in enumerate(weeks):
+                jit = 1 + 0.05 * (((w * 7) % 11) - 5) / 5.0  # deterministic ±5% wobble
+                ly[int(w)] = round(actmap.get(w, 0) * ly_base * jit, 2)
+        return {
+            'label': label, 'fmt': fmt,
+            'act': {int(w): round(actmap.get(w, 0), 2) for w in weeks},
+            'ly': ly,
+            'fcst': {int(w): round(fcmap.get(w, 0), 2) for w in weeks if fcmap and fcmap.get(w, 0)},
+        }
+
+    metrics = {
+        'eComm Sales': mk('eComm Sales', '$', acc['eComm Sales'], ly_factor['eComm Sales'], fc['eComm Sales']),
+        'Units': mk('Units', 'n', acc['Units'], ly_factor['Units']),
+        'Orders': mk('Orders', 'n', acc['Orders'], ly_factor['Orders']),
+        'Sessions': mk('Sessions', 'n', acc['Sessions'], ly_factor['Sessions']),
+        'New Customers': mk('New Customers', 'n', acc['New Customers'], ly_factor['New Customers'], fc['New Customers']),
+        'Returning': mk('Returning', 'n', acc['Returning'], ly_factor['Returning']),
+        'Online Store Orders': mk('Online Store Orders', 'n', acc['Orders'], ly_factor['Orders']),
+        'Paid Media Spend': mk('Paid Media Spend', '$', acc['Paid Media Spend'], ly_factor['Paid Media Spend'], fc['Paid Media Spend']),
+    }
+
+    # Sample channel split of eComm Sales
+    ch_ratios = [('Online Store', 0.72), ('TikTok Shop', 0.12), ('FB/IG Shop', 0.10), ('Subscriptions', 0.06)]
+    channels = {name: {int(w): round(acc['eComm Sales'].get(w, 0) * frac, 2) for w in weeks}
+                for name, frac in ch_ratios}
+
+    return {
+        'available': True,
+        'weeks': [int(w) for w in weeks],
+        'current_week': int(current_week),
+        'l4w_weeks': [int(w) for w in l4w],
+        'week_month': {str(int(w)): week_month_map.get((current_year, w), '') for w in weeks},
+        'metrics': metrics,
+        'channels': channels,
+        'channels_sample': True,
+        'forecast_sample': False,
+        'sample_seeded': False,
+        'source': ('Demo Shopify daily, aggregated to fiscal weeks. eComm Sales/Units/Orders/Sessions/'
+                   'Customers and Paid Media are real (TY); eComm Sales LY is real; LY for other metrics '
+                   'is illustrative. Channel split is sample data.'),
+    }

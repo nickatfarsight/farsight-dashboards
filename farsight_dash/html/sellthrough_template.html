@@ -429,7 +429,7 @@ function kpi(label,value,sub,opts={}){
 // =====================================================================
 // STATE
 // =====================================================================
-let state={period:'ytd',retailers:['All'],compare:false,category:'All',comparison:'ly',asOfWeek:M.current_week,channel:'all',catGroupBy:'cat'};
+let state={period:'ytd',retailers:['All'],compare:false,category:'All',comparison:'ly',asOfWeek:M.current_week,channel:'all',catGroupBy:'coll'};
 let charts={};
 function dc(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
 
@@ -1620,103 +1620,204 @@ function buildCategoryPage(){
   document.getElementById('page-category').innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
       <div class="scope-label" id="catScopeLabel" style="margin:0;">Showing: All Retailers</div>
-      <div><span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-right:6px;">Group by</span>
-        <button class="period-btn active" id="catGrpCat" onclick="window._catGroupBy('cat')">Category</button>
-        <button class="period-btn" id="catGrpColl" onclick="window._catGroupBy('coll')">Collection</button></div>
+      <div><span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-right:6px;">View by</span>
+        <button class="period-btn" id="catGrpCat" onclick="window._catGroupBy('cat')">Category</button>
+        <button class="period-btn active" id="catGrpColl" onclick="window._catGroupBy('coll')">Collection</button></div>
     </div>
-    <div class="table-container"><div class="table-title" id="catSummaryTitle">Category Performance Summary</div><div id="catHeatmap"></div></div>
-    <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="catWeeklyTitle">Category Monthly Trend (TY)</div><div style="position:relative;height:300px;"><canvas id="catWeekly"></canvas></div></div></div>
-    <div class="chart-row">
-      <div class="chart-container"><div class="chart-title" id="catShareTitle">Category Share of YTD Sales <span class="chart-hint">(click slice)</span></div><canvas id="catShare"></canvas></div>
-      <div class="chart-container"><div class="chart-title" id="catTopSKUTitle">Top SKUs in Selected Category <span class="chart-hint">(click bar)</span></div><canvas id="catTopSKU"></canvas></div>
-    </div>
+    <div class="kpi-grid" id="catStory" style="margin-bottom:14px;"></div>
+    <div class="table-container"><div class="table-title" id="catSummaryTitle">Collection Performance Summary</div><div id="catHeatmap"></div></div>
+    <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="catDriversTitle">Drivers &amp; Draggers</div><div style="position:relative;height:380px;"><canvas id="catDrivers"></canvas></div></div></div>
+    <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="catWaterfallTitle">What Moved the Business</div><div style="position:relative;height:340px;"><canvas id="catWaterfall"></canvas></div></div></div>
+    <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="catWeeklyTitle">Collection Monthly Trend</div><div style="position:relative;height:340px;"><canvas id="catWeekly"></canvas></div></div></div>
   `;
+}
+window._catGroupBy=function(g){state.catGroupBy=g;var a=document.getElementById('catGrpCat'),b=document.getElementById('catGrpColl');if(a)a.classList.toggle('active',g==='cat');if(b)b.classList.toggle('active',g==='coll');state.category='All';renderCategory();};
+window._catSort=window._catSort||{key:'ty',dir:'desc'};
+function setCatSort(key){const s=window._catSort;if(s.key===key){s.dir=s.dir==='desc'?'asc':'desc';}else{s.key=key;s.dir=key==='cat'?'asc':'desc';}renderCategory();}
+window._driverMode=window._driverMode||'ly';
+function setDriverMode(m){window._driverMode=m;renderCategory();}
+function periodUnits(s){const p=state.period;if(p==='l4w')return s.l4w_u||0;return s.ytd_u||0;}
+function showGroupChannelDrill(grpField,grp){
+  const skus=filteredSKUs().filter(s=>String(s[grpField]||'').trim()===grp);
+  const byRet={};
+  skus.forEach(s=>{if(s.rets)Object.keys(s.rets).forEach(r=>{byRet[r]=byRet[r]||{ret:r,ty:0,ly:0};byRet[r].ty+=s.rets[r].ty||0;byRet[r].ly+=s.rets[r].ly||0;});});
+  const rows=Object.values(byRet).sort((a,b)=>b.ty-a.ty);
+  rows.forEach(r=>r.pct=delta(r.ty,r.ly));
+  showDrillDown(grp+' — by channel (YTD)',rows,[
+    {key:'ret',label:'Retailer'},
+    {key:'ty',label:'YTD $',align:'r',render:r=>fmtK(r.ty)},
+    {key:'ly',label:'LY $',align:'r',render:r=>fmtK(r.ly)},
+    {key:'pct',label:'vs LY %',align:'r',render:r=>fmtPct(r.pct)},
+  ]);
+}
+function showOtherCollections(){
+  const members=(window._catOtherMembers||[]).slice().sort((a,b)=>b.ty-a.ty);
+  const cols=[
+    {key:'cat',label:'Collection',render:r=>{const j=String(r.cat).replace(/\\/g,'\\\\').replace(/'/g,"\\'");return `<span style="cursor:zoom-in;text-decoration:underline dotted" onclick="showGroupChannelDrill('coll','${j}')">${r.cat}</span>`;}},
+    {key:'ty',label:periodLabel()+' $',align:'r',render:r=>fmtK(r.ty)},
+    {key:'ly',label:'LY $',align:'r',render:r=>fmtK(r.ly)},
+    {key:'pct',label:'vs LY %',align:'r',render:r=>fmtPct(r.pct)},
+    {key:'fc',label:'Fcst $',align:'r',render:r=>r.fc>0?fmtK(r.fc):'N/A'},
+    {key:'share',label:'% of Total',align:'r',render:r=>(r.share*100).toFixed(2)+'%'},
+  ];
+  showDrillDown('Other — '+members.length+' smaller collections (click one for by-channel)',members,cols);
 }
 
 function renderCategory(){
   document.getElementById('catScopeLabel').textContent='Showing: '+scopeText();
-  const grpBy=state.catGroupBy||'cat';
+  if(!state.catGroupBy)state.catGroupBy='coll';
+  const grpBy=state.catGroupBy;
   const grpField=grpBy==='coll'?'coll':'cat';
   const grpLabel=grpBy==='coll'?'Collection':'Category';
-  const cleanG=v=>(v==null||v==='nan'||v==='None'||v==='')?null:v;
-  const cats=grpBy==='coll'?(M.collections||[]):M.categories;
-  const tt=document.getElementById('catSummaryTitle'); if(tt)tt.textContent=grpLabel+' Performance Summary';
+  const cleanG=v=>(v==null||v==='nan'||v==='None'||v==='')?'':String(v).trim();
+  const allSkus=filteredSKUs();
+  const groupSet=new Set();
+  allSkus.forEach(s=>{const v=cleanG(s[grpField]);if(v&&v!=='nan')groupSet.add(v);});
+  const canon=grpBy==='coll'?(M.collections||[]):M.categories;
+  let cats=canon.filter(c=>groupSet.has(c)).concat([...groupSet].filter(c=>canon.indexOf(c)<0));
   const skusByCat={};
-  cats.forEach(cat=>{skusByCat[cat]=filteredSKUs().filter(s=>cleanG(s[grpField])===cat);});
+  cats.forEach(cat=>{skusByCat[cat]=allSkus.filter(s=>cleanG(s[grpField])===cat);});
+  cats.sort((a,b)=>(skusByCat[b]||[]).reduce((s,x)=>s+(x.ytd||0),0)-(skusByCat[a]||[]).reduce((s,x)=>s+(x.ytd||0),0));
+  const tt=document.getElementById('catSummaryTitle'); if(tt)tt.textContent=grpLabel+' Performance Summary';
+  const pLbl=periodLabel();
 
-  // Heatmap table with forecast
-  let h='<table><thead><tr><th>'+grpLabel+'</th><th class="r">'+periodLabel()+' $</th><th class="r">YTD $</th><th class="r">YTD LY</th><th class="r">YTD % Chg</th><th class="r">YTD Fcst</th><th class="r">vs Fcst</th><th class="r">Units</th></tr></thead><tbody>';
+  // Per-group period metrics
   const catMetrics=[];
   cats.forEach(cat=>{
     const skus=skusByCat[cat]||[];
-    const prd=skus.reduce((a,s)=>a+periodVal(s).ty,0);
-    const ytd=skus.reduce((a,s)=>a+s.ytd,0);
-    const ytd_ly=skus.reduce((a,s)=>a+s.ytd_ly,0);
-    const ytd_u=skus.reduce((a,s)=>a+s.ytd_u,0);
-    const fc=skus.reduce((a,s)=>a+(s.fc_d_ytd||0),0);
-    const pct=delta(ytd,ytd_ly);
-    const fcPct=fc>0?delta(ytd,fc):null;
-    catMetrics.push({cat,prd,ytd,ytd_ly,ytd_u,fc,pct,fcPct});
-    const cls=pct==null?'hm-neutral':(pct>=.1?'hm-green':pct>=0?'hm-light-green':pct>=-0.1?'hm-light-red':'hm-red');
-    const fcCls=fcPct==null?'':(fcPct>=0?'hm-green':'hm-red');
-    h+=`<tr class="clickable" onclick="catGroupDrill('${grpField}',this.getAttribute('data-grp'))" data-grp="${String(cat).replace(/"/g,'&quot;')}">`;
-    h+=`<td><strong>${cat}</strong></td><td class="r">${fmtK(prd)}</td><td class="r">${fmtK(ytd)}</td><td class="r">${fmtK(ytd_ly)}</td>`;
-    h+=`<td class="r ${cls}" style="font-weight:700">${fmtPct(pct)}</td>`;
-    h+=`<td class="r">${fc>0?fmtK(fc):'N/A'}</td><td class="r ${fcCls}" style="font-weight:700">${fcPct!=null?fmtPct(fcPct):'N/A'}</td>`;
-    h+=`<td class="r">${fmtN(ytd_u)}</td></tr>`;
+    const ty=skus.reduce((a,s)=>a+periodVal(s).ty,0);
+    const ly=skus.reduce((a,s)=>a+periodVal(s).ly,0);
+    const fc=skus.reduce((a,s)=>a+(periodVal(s).fc||0),0);
+    const u=skus.reduce((a,s)=>a+periodUnits(s),0);
+    catMetrics.push({cat,ty,ly,fc,u,pct:delta(ty,ly),fcPct:fc>0?delta(ty,fc):null});
   });
-  const tw=catMetrics.reduce((a,c)=>a+c.prd,0),ty=catMetrics.reduce((a,c)=>a+c.ytd,0),tly=catMetrics.reduce((a,c)=>a+c.ytd_ly,0),tu=catMetrics.reduce((a,c)=>a+c.ytd_u,0),tfc=catMetrics.reduce((a,c)=>a+c.fc,0);
-  h+=`<tr style="font-weight:700;border-top:2px solid var(--border);"><td>TOTAL</td><td class="r">${fmtK(tw)}</td><td class="r">${fmtK(ty)}</td><td class="r">${fmtK(tly)}</td><td class="r">${fmtPct(delta(ty,tly))}</td><td class="r">${tfc>0?fmtK(tfc):'N/A'}</td><td class="r">${tfc>0?fmtPct(delta(ty,tfc)):'N/A'}</td><td class="r">${fmtN(tu)}</td></tr>`;
+  const totTy=catMetrics.reduce((a,c)=>a+c.ty,0)||1;
+  catMetrics.forEach(c=>c.share=c.ty/totTy);
+  const totYtd=cats.reduce((a,cat)=>a+(skusByCat[cat]||[]).reduce((x,s)=>x+(s.ytd||0),0),0)||1;
+  catMetrics.forEach(c=>{c.ytdShare=(skusByCat[c.cat]||[]).reduce((x,s)=>x+(s.ytd||0),0)/totYtd;});
+
+  // Collection view: consolidate <1% YTD share into "Other"
+  const COLL_KEEP_MIN=0.01;
+  let display=catMetrics;
+  window._catOtherMembers=[];
+  if(grpBy==='coll'){
+    const kept=catMetrics.filter(c=>c.ytdShare>=COLL_KEEP_MIN);
+    const other=catMetrics.filter(c=>c.ytdShare<COLL_KEEP_MIN);
+    window._catOtherMembers=other;
+    if(other.length){
+      const o={cat:'Other',_other:true,n:other.length,ty:other.reduce((a,c)=>a+c.ty,0),ly:other.reduce((a,c)=>a+c.ly,0),fc:other.reduce((a,c)=>a+c.fc,0),u:other.reduce((a,c)=>a+c.u,0)};
+      o.pct=delta(o.ty,o.ly);o.fcPct=o.fc>0?delta(o.ty,o.fc):null;o.share=o.ty/totTy;
+      display=kept.concat([o]);
+    } else display=kept;
+  }
+  window._catDisplay=display;
+  const maxShare=Math.max(0.0001,...display.filter(c=>!c._other).map(c=>c.share));
+
+  // Sort (Other pinned bottom)
+  const srt=window._catSort||{key:'ty',dir:'desc'};const sgn=srt.dir==='desc'?-1:1;
+  const sortable=display.filter(c=>!c._other);const otherRow=display.find(c=>c._other);
+  sortable.sort((a,b)=>{if(srt.key==='cat')return sgn*String(a.cat).localeCompare(String(b.cat));const av=a[srt.key]==null?-Infinity:a[srt.key];const bv=b[srt.key]==null?-Infinity:b[srt.key];return sgn*(av-bv);});
+  const rowsOrdered=otherRow?sortable.concat([otherRow]):sortable;
+
+  // Heatmap table (sortable, % of total shaded)
+  const arrow=k=>srt.key===k?(srt.dir==='desc'?' ▾':' ▴'):'';
+  const th=(k,lbl,cls)=>`<th class="${cls||''}" style="cursor:pointer;user-select:none" onclick="setCatSort('${k}')">${lbl}${arrow(k)}</th>`;
+  let h='<table><thead><tr>'+th('cat',grpLabel)+th('ty',pLbl+' $','r')+th('ly','LY $','r')+th('pct','vs LY %','r')+th('fc','Fcst $','r')+th('fcPct','vs Fcst %','r')+th('share','% of Total','r')+th('u','Units','r')+'</tr></thead><tbody>';
+  rowsOrdered.forEach(c=>{
+    const cls=c.pct==null?'hm-neutral':(c.pct>=.1?'hm-green':c.pct>=0?'hm-light-green':c.pct>-0.1?'hm-light-red':'hm-red');
+    const fcCls=c.fcPct==null?'':(c.fcPct>=0?'hm-green':'hm-red');
+    const a=Math.min(1,c.share/maxShare);const shCell=`background:rgba(199,125,138,${(0.10+0.62*a).toFixed(3)});font-weight:600`;
+    if(c._other){
+      h+=`<tr class="clickable" onclick="showOtherCollections()" style="background:var(--bg-warm,#faf6f3)">`;
+      h+=`<td><strong>Other</strong> <span style="color:var(--text-muted);font-weight:400">(${c.n} collections ›)</span></td>`;
+      h+=`<td class="r">${fmtK(c.ty)}</td><td class="r">${fmtK(c.ly)}</td><td class="r ${cls}" style="font-weight:700">${fmtPct(c.pct)}</td>`;
+      h+=`<td class="r">${c.fc>0?fmtK(c.fc):'N/A'}</td><td class="r ${fcCls}" style="font-weight:700">${c.fcPct!=null?fmtPct(c.fcPct):'N/A'}</td>`;
+      h+=`<td class="r" style="${shCell}">${(c.share*100).toFixed(1)}%</td><td class="r">${fmtN(c.u)}</td></tr>`;return;
+    }
+    const catJs=String(c.cat).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    h+=`<tr class="clickable" onclick="state.category='${catJs}';renderActive();">`;
+    h+=`<td><strong>${c.cat}</strong></td>`;
+    h+=`<td class="r" style="cursor:zoom-in;text-decoration:underline dotted" onclick="event.stopPropagation();showGroupChannelDrill('${grpField}','${catJs}')">${fmtK(c.ty)}</td>`;
+    h+=`<td class="r">${fmtK(c.ly)}</td><td class="r ${cls}" style="font-weight:700">${fmtPct(c.pct)}</td>`;
+    h+=`<td class="r">${c.fc>0?fmtK(c.fc):'N/A'}</td><td class="r ${fcCls}" style="font-weight:700">${c.fcPct!=null?fmtPct(c.fcPct):'N/A'}</td>`;
+    h+=`<td class="r" style="${shCell}">${(c.share*100).toFixed(1)}%</td><td class="r">${fmtN(c.u)}</td></tr>`;
+  });
+  const tTy=catMetrics.reduce((a,c)=>a+c.ty,0),tLy=catMetrics.reduce((a,c)=>a+c.ly,0),tFc=catMetrics.reduce((a,c)=>a+c.fc,0),tU=catMetrics.reduce((a,c)=>a+c.u,0);
+  h+=`<tr style="font-weight:700;border-top:2px solid var(--border);"><td>TOTAL</td><td class="r">${fmtK(tTy)}</td><td class="r">${fmtK(tLy)}</td><td class="r">${fmtPct(delta(tTy,tLy))}</td><td class="r">${tFc>0?fmtK(tFc):'N/A'}</td><td class="r">${tFc>0?fmtPct(delta(tTy,tFc)):'N/A'}</td><td class="r">100.0%</td><td class="r">${fmtN(tU)}</td></tr>`;
   h+='</tbody></table>';
   document.getElementById('catHeatmap').innerHTML=h;
 
-  // Dynamic chart titles
-  document.getElementById('catWeeklyTitle').innerHTML='Category Monthly Trend (TY) &mdash; '+channelLabel()+chartTip('Monthly sell-through by product category across '+channelLabel()+'. Source: Sales Database + Shopify.');
-  document.getElementById('catShareTitle').innerHTML='Category Share of YTD Sales &mdash; '+channelLabel()+' <span class="chart-hint">(click slice)</span>'+chartTip('Each category&#39;s share of total YTD sell-through across '+channelLabel()+'. Source: Sales Database + Shopify.');
+  renderCatStory(display,grpLabel);
+  renderCatDrivers(display,grpLabel,grpField);
+  renderCatWaterfall(display,grpLabel);
 
-  // Category/Collection monthly trend
+  // Monthly trend
   dc('catWeekly');
-  const monthlySrc=grpBy==='coll'?(DATA.coll_monthly||[]):(DATA.cat_monthly||[]);
-  const monthlyKey=grpBy==='coll'?'coll':'cat';
-  const months=monthlySrc.filter(r=>r.yr===M.current_year).map(r=>r.mo);
-  const uMos=[...new Set(months)].sort((a,b)=>(MO_ORDER[a]||0)-(MO_ORDER[b]||0));
-  const datasets2=cats.map((cat,i)=>{
-    const cm=monthlySrc.filter(r=>r.yr===M.current_year&&r[monthlyKey]===cat);
-    const cmMap=Object.fromEntries(cm.map(r=>[r.mo,r]));
-    return{label:cat,data:uMos.map(m=>(cmMap[m]||{}).ty||0),borderColor:COLORS[i%COLORS.length],borderWidth:2,tension:.3,fill:false};
-  });
-  charts['catWeekly']=new Chart(document.getElementById('catWeekly'),{type:'line',data:{
-    labels:uMos,datasets:datasets2
-  },options:{responsive:true,plugins:{legend:{position:'top'}},scales:{y:{title:{display:true,text:'Retail Sales ($)'},ticks:{callback:v=>fmtK(v)}},x:{title:{display:true,text:'Fiscal Month'}}}}});
+  const _suffix=grpBy==='coll'?'(TY vs Fcst)':'(TY)';
+  document.getElementById('catWeeklyTitle').innerHTML=grpLabel+' Monthly Trend '+_suffix+' &mdash; '+channelLabel()+chartTip('Monthly sell-through by '+grpLabel.toLowerCase()+' across '+channelLabel()+'. Solid = actual; dashed = forecast. Source: Sales Database + Shopify.');
+  let uMos,monthlyDatasets;
+  if(grpBy==='cat'){
+    const months=DATA.cat_monthly.filter(r=>r.yr===M.current_year).map(r=>r.mo);
+    uMos=[...new Set(months)].sort((a,b)=>(MO_ORDER[a]||0)-(MO_ORDER[b]||0));
+    monthlyDatasets=cats.slice(0,10).map((cat,i)=>{
+      const cm=DATA.cat_monthly.filter(r=>r.yr===M.current_year&&r.cat===cat);
+      const cmMap=Object.fromEntries(cm.map(r=>[r.mo,r]));
+      return{label:cat,data:uMos.map(m=>(cmMap[m]||{}).ty||0),borderColor:COLORS[i%COLORS.length],borderWidth:2,tension:.3,fill:false};
+    });
+  } else {
+    const cm=(DATA.coll_monthly||[]).filter(r=>r.yr===M.current_year);
+    uMos=[...new Set(cm.map(r=>r.mo))].sort((a,b)=>(MO_ORDER[a]||0)-(MO_ORDER[b]||0));
+    const topColls=cats.slice(0,8);monthlyDatasets=[];
+    topColls.forEach((coll,i)=>{
+      const map=Object.fromEntries(cm.filter(r=>r.coll===coll).map(r=>[r.mo,r]));const color=COLORS[i%COLORS.length];
+      monthlyDatasets.push({label:coll,data:uMos.map(m=>(map[m]||{}).ty||0),borderColor:color,backgroundColor:color,borderWidth:2,tension:.3,fill:false});
+      monthlyDatasets.push({label:coll+' (Fcst)',data:uMos.map(m=>{const v=(map[m]||{}).fc_d;return v?v:null;}),borderColor:color,borderDash:[5,4],borderWidth:1.5,tension:.3,fill:false,pointRadius:0,spanGaps:true});
+    });
+  }
+  charts['catWeekly']=new Chart(document.getElementById('catWeekly'),{type:'line',data:{labels:uMos,datasets:monthlyDatasets},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:24,padding:10,filter:item=>!/ \(Fcst\)$/.test(item.text)}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmtK(ctx.parsed.y)}}},scales:{y:{title:{display:true,text:'Retail Sales ($)'},ticks:{callback:v=>fmtK(v)}},x:{title:{display:true,text:'Fiscal Month'}}},
+      onClick:(evt,elements)=>{if(!elements.length)return;const mo=uMos[elements[0].index];const cat=monthlyDatasets[elements[0].datasetIndex].label.replace(/ \(Fcst\)$/,'');const catSkus=filteredSKUs().filter(s=>cleanG(s[grpField])===cat).sort((a,b)=>b.ytd-a.ytd);showDrillDown(cat+' — '+mo+' SKU Detail',catSkus,getDDCols());}
+    }});
+}
 
-  // Category share doughnut
-  dc('catShare');
-  const catYTD=catMetrics.map(c=>c.ytd);
-  charts['catShare']=new Chart(document.getElementById('catShare'),{type:'doughnut',data:{
-    labels:cats,datasets:[{data:catYTD,backgroundColor:COLORS.slice(0,cats.length)}]
-  },options:{responsive:true,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:ctx=>{const t=catYTD.reduce((a,b)=>a+b,0);return fmtK(ctx.raw)+' ('+(ctx.raw/(t||1)*100).toFixed(1)+'%)';}}}},
-    onClick:(evt,elements)=>{
-      if(!elements.length)return;
-      const cat=cats[elements[0].index];
-      const catSkus=filteredSKUs().filter(s=>cleanG(s[grpField])===cat).sort((a,b)=>b.ytd-a.ytd);
-      showDrillDown(cat+' SKU Detail',catSkus,getDDCols());
-    }
-  }});
+function renderCatStory(display,grpLabel){
+  const el=document.getElementById('catStory');if(!el)return;
+  const rows=display.filter(c=>!c._other);
+  const byGain=rows.slice().sort((a,b)=>(b.ty-b.ly)-(a.ty-a.ly));
+  const driver=byGain[0],drag=byGain[byGain.length-1];
+  const behind=rows.filter(c=>c.fc>0).slice().sort((a,b)=>(a.ty-a.fc)-(b.ty-b.fc))[0];
+  const totTy=rows.reduce((a,c)=>a+c.ty,0)||1;const top=rows.slice().sort((a,b)=>b.ty-a.ty)[0];const pLbl=periodLabel();
+  const card=(tag,name,big,sub,col)=>`<div class="kpi-card" style="cursor:default;border-left:4px solid ${col}"><div class="kpi-label" style="color:${col}">${tag}</div><div style="font-size:15px;font-weight:700;margin:2px 0;line-height:1.2">${name}</div><div class="kpi-value" style="font-size:20px">${big}</div><div class="kpi-sub" style="color:var(--text-muted)">${sub}</div></div>`;
+  let html='';
+  if(driver){const d=driver.ty-driver.ly;html+=card('▲ Biggest driver',driver.cat,(d>=0?'+':'')+fmtK(d),'vs LY · '+fmtPct(driver.pct)+' ('+pLbl+')','var(--green,#5CB85C)');}
+  if(drag){const d=drag.ty-drag.ly;html+=card('▼ Biggest drag',drag.cat,fmtK(d),'vs LY · '+fmtPct(drag.pct)+' ('+pLbl+')','var(--red,#C0504D)');}
+  if(behind){const d=behind.ty-behind.fc;html+=card('◆ Furthest behind plan',behind.cat,fmtK(d),'vs Fcst · '+fmtPct(behind.fcPct),'#D4A017');}
+  if(top){html+=card('● Concentration',top.cat,(top.ty/totTy*100).toFixed(0)+'%','of '+grpLabel.toLowerCase()+' business ('+pLbl+')','#C77D8A');}
+  el.innerHTML=html;
+}
 
-  // Top SKUs in selected/first category
-  dc('catTopSKU');
-  const selCat=cats[0];
-  document.getElementById('catTopSKUTitle').innerHTML='Top SKUs &mdash; '+(selCat||'All')+' &mdash; '+channelLabel()+' <span class="chart-hint">(click bar)</span>'+chartTip('Top 10 SKUs in '+selCat+' by YTD sell-through across '+channelLabel()+'. Source: Sales Database.');
-  const topCatSKUs=DATA.skus.filter(s=>cleanG(s[grpField])===selCat).slice(0,10);
-  charts['catTopSKU']=new Chart(document.getElementById('catTopSKU'),{type:'bar',data:{
-    labels:topCatSKUs.map(s=>s.desc.substring(0,25)),
-    datasets:[
-      {label:'TY YTD',data:topCatSKUs.map(s=>s.ytd),backgroundColor:'#727F97'},
-      {label:'Forecast',data:topCatSKUs.map(s=>s.fc_d_ytd||0),backgroundColor:'rgba(91,155,213,.35)'},
-    ]
-  },options:{indexAxis:'y',responsive:true,plugins:{legend:{position:'top'}},scales:{x:{title:{display:true,text:'Retail Sales ($)'},ticks:{callback:v=>fmtK(v)}}},
-    onClick:(evt,elements)=>{if(elements.length)showSKUDetail(topCatSKUs[elements[0].index].ic);}
-  }});
+function renderCatDrivers(display,grpLabel,grpField){
+  dc('catDrivers');const mode=window._driverMode;
+  const rows=display.filter(c=>!c._other).map(c=>({cat:c.cat,delta:mode==='fc'?(c.fc>0?c.ty-c.fc:0):(c.ty-c.ly)})).filter(r=>r.delta!==0).sort((a,b)=>b.delta-a.delta);
+  const tog=`<span style="float:right;font-weight:400;font-size:11px"><button onclick="setDriverMode('ly')" style="border:none;cursor:pointer;font-family:inherit;font-size:11px;padding:3px 9px;border-radius:5px;${mode==='ly'?'background:var(--accent,#C77D8A);color:#fff':'background:var(--bg-warm,#f0e9e4);color:var(--text-muted)'}">vs LY</button><button onclick="setDriverMode('fc')" style="border:none;cursor:pointer;font-family:inherit;font-size:11px;padding:3px 9px;border-radius:5px;margin-left:3px;${mode==='fc'?'background:var(--accent,#C77D8A);color:#fff':'background:var(--bg-warm,#f0e9e4);color:var(--text-muted)'}">vs Fcst</button></span>`;
+  document.getElementById('catDriversTitle').innerHTML='Drivers &amp; Draggers — $ change '+(mode==='fc'?'vs Forecast':'vs LY')+' ('+periodLabel()+')'+tog+chartTip('Each '+grpLabel.toLowerCase()+'\'s $ change '+(mode==='fc'?'vs forecast':'vs last year')+' for the selected period. Green = growth, red = decline. Click a bar for by-channel detail.');
+  charts['catDrivers']=new Chart(document.getElementById('catDrivers'),{type:'bar',data:{labels:rows.map(r=>r.cat),datasets:[{data:rows.map(r=>r.delta),backgroundColor:rows.map(r=>r.delta>=0?'rgba(92,184,92,.85)':'rgba(192,80,77,.85)'),borderWidth:0}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>(ctx.raw>=0?'+':'')+fmtK(ctx.raw)+(mode==='fc'?' vs Fcst':' vs LY')}}},scales:{x:{title:{display:true,text:'$ change'},ticks:{callback:v=>fmtK(v)},grid:{color:c=>c.tick.value===0?'rgba(0,0,0,.35)':'rgba(0,0,0,.05)'}},y:{ticks:{font:{size:11}}}},
+      onClick:(evt,elements)=>{if(elements.length)showGroupChannelDrill(grpField,rows[elements[0].index].cat);}
+    }});
+}
+
+function renderCatWaterfall(display,grpLabel){
+  dc('catWaterfall');
+  const rows=display.map(c=>({cat:c._other?('Other ('+c.n+')'):c.cat,delta:c.ty-c.ly}));
+  const lyTot=display.reduce((a,c)=>a+c.ly,0),tyTot=display.reduce((a,c)=>a+c.ty,0);
+  rows.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  const labels=['LY total'],base=[0],vis=[lyTot],colr=['rgba(120,120,130,.65)'];let run=lyTot;
+  rows.forEach(r=>{labels.push(r.cat);if(r.delta>=0){base.push(run);vis.push(r.delta);colr.push('rgba(92,184,92,.85)');}else{base.push(run+r.delta);vis.push(-r.delta);colr.push('rgba(192,80,77,.85)');}run+=r.delta;});
+  labels.push('TY total');base.push(0);vis.push(tyTot);colr.push('rgba(199,125,138,.9)');
+  document.getElementById('catWaterfallTitle').innerHTML='What Moved the Business — LY → TY by '+grpLabel.toLowerCase()+' ('+periodLabel()+')'+chartTip('Bridges last year\'s total to this year\'s, showing each '+grpLabel.toLowerCase()+'\'s +/- contribution. Source: Sales Database + Shopify.');
+  charts['catWaterfall']=new Chart(document.getElementById('catWaterfall'),{type:'bar',data:{labels,datasets:[{label:'base',data:base,backgroundColor:'transparent',stack:'w'},{label:'val',data:vis,backgroundColor:colr,stack:'w'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{filter:i=>i.datasetIndex===1,callbacks:{label:ctx=>{const i=ctx.dataIndex;if(i===0||i===labels.length-1)return fmtK(vis[i]);const d=rows[i-1].delta;return (d>=0?'+':'')+fmtK(d)+' vs LY';}}}},scales:{x:{stacked:true,ticks:{font:{size:10},maxRotation:60,minRotation:30}},y:{stacked:true,ticks:{callback:v=>fmtK(v)}}}}});
 }
 
 // =====================================================================
@@ -2221,336 +2322,182 @@ function showDoorDetail(loc){
 }
 
 // =====================================================================
-// DTC PERFORMANCE TAB
+// DTC TAB (weekly: act / LY / forecast, metric explorer, channel & funnel)
 // =====================================================================
-const DTC=DATA.dtc_perf||{};
-const DTC_DAILY=DTC.daily||[];
-const DTC_COHORTS=DTC.cohorts||[];
+const DTCD = DATA.dtc || {available:false};
+const DTC_TREND = {
+  'eComm Sales':{fmt:'$',base:'eComm Sales'},
+  'Orders':{fmt:'n',base:'Orders'},
+  'AOV':{fmt:'$2',num:'eComm Sales',den:'Orders'},
+  'Sessions':{fmt:'n',base:'Sessions'},
+  'Conversion Rate':{fmt:'pct',num:'Online Store Orders',den:'Sessions',mult:100},
+  'New Customers':{fmt:'n',base:'New Customers'},
+  'AUR':{fmt:'$2',num:'eComm Sales',den:'Units'},
+  'UPT':{fmt:'x',num:'Units',den:'Orders'},
+  'Paid Media Spend':{fmt:'$',base:'Paid Media Spend'},
+  'MER (bROAS)':{fmt:'x',num:'eComm Sales',den:'Paid Media Spend'},
+  'bCAC':{fmt:'$2',num:'Paid Media Spend',den:'New Customers'},
+  '% New':{fmt:'pct',num:'New Customers',den:'Orders',mult:100}
+};
+const DTC_CH_COLORS={'Online Store':'#727F97','TikTok Shop':'#5B9BD5','FB/IG Shop':'#8FA1A2','Subscriptions':'#D4A017'};
+window._dtcPeriod=window._dtcPeriod||'ytd';
+window._dtcCmp=window._dtcCmp||'ly';
+window._dtcExpMetric=window._dtcExpMetric||'eComm Sales';
+window._dtcExpAll=window._dtcExpAll||false;
+window._dtcCharts=[];
+
+function _dtcFmt(fmt,v){if(v==null||isNaN(v))return '—';if(fmt==='$')return '$'+Math.round(v).toLocaleString();if(fmt==='$2')return '$'+v.toFixed(2);if(fmt==='pct')return v.toFixed(1)+'%';if(fmt==='x')return v.toFixed(2)+'x';return Math.round(v).toLocaleString();}
+function dtcDisp(k){return k==='eComm Sales'?'eComm Gross Sales':k;}
+function _dtcMV(name,side,w){const m=DTCD.metrics&&DTCD.metrics[name];return (m&&m[side]&&m[side][w]!=null)?m[side][w]:null;}
+function _dtcWeeks(){const p=window._dtcPeriod,cur=DTCD.current_week,wks=DTCD.weeks||[];if(p==='wk')return wks.includes(cur)?[cur]:wks.slice(-1);if(p==='mtd'){const mo=DTCD.week_month[String(cur)];return wks.filter(w=>DTCD.week_month[String(w)]===mo&&w<=cur);}return wks;}
+function _dtcSumBase(name,weeks,cmp){let a=0,c=0,hasA=false,hasC=false;const m=DTCD.metrics[name];if(!m)return{a:null,c:null};const cs=cmp==='fcst'?m.fcst:m.ly;weeks.forEach(w=>{if(m.act[w]!=null){a+=m.act[w];hasA=true;}if(cs&&cs[w]!=null){c+=cs[w];hasC=true;}});return{a:hasA?a:null,c:hasC?c:null};}
+function _dtcDerived(def,weeks,cmp){
+  if(def.base)return _dtcSumBase(def.base,weeks,cmp);
+  const n=_dtcSumBase(def.num,weeks,cmp),d=_dtcSumBase(def.den,weeks,cmp);
+  const a=(n.a!=null&&d.a)?n.a/d.a*(def.mult||1):null;
+  const c=(n.c!=null&&d.c)?n.c/d.c*(def.mult||1):null;
+  return{a,c};
+}
+function dtcDelta(a,c,higherBetter){if(a==null||c==null||c===0)return '';const v=a/c-1;const pos=higherBetter?(v>=0):(v<=0);const col=pos?'var(--green,#5CB85C)':'var(--red,#D9534F)';const nm=window._dtcCmp==='fcst'?'Fcst':'LY';return `<div class="kpi-delta" style="color:${col}">${v>=0?'▲':'▼'} ${Math.abs(v*100).toFixed(1)}% vs ${nm}</div>`;}
 
 function buildDTCPage(){
   const pg=document.getElementById('page-dtc');
-  if(!DTC_DAILY.length){pg.innerHTML='<div style="padding:40px;color:var(--text-muted);text-align:center;">DTC Performance not configured. Add <code>dtc_performance</code> source in client_config.yaml.</div>';return;}
+  if(!DTCD.available){pg.innerHTML='<div style="padding:40px;color:var(--text-muted);text-align:center;">DTC data not available.</div>';return;}
   pg.innerHTML=`
-    <div class="kpi-grid" id="dtc-kpis"></div>
-    <div class="chart-row">
-      <div class="chart-container" style="position:relative">
-        <div class="chart-title" id="dtcRevTitle">Daily Gross Sales vs Target</div>
-        <div style="position:relative;height:260px"><canvas id="dtcRevChart"></canvas></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
+      <div class="period-toggle" id="dtcViewToggle">
+        <button class="period-btn" data-v="wk">Week</button>
+        <button class="period-btn" data-v="mtd">MTD</button>
+        <button class="period-btn active" data-v="ytd">YTD</button>
       </div>
-      <div class="chart-container" style="position:relative">
-        <div class="chart-title" id="dtcCumTitle">Cumulative Gross Sales Pacing</div>
-        <div style="position:relative;height:260px"><canvas id="dtcCumChart"></canvas></div>
+      <div class="period-toggle" id="dtcCmpToggle">
+        <button class="period-btn active" data-cmp="ly">vs LY</button>
+        <button class="period-btn" data-cmp="fcst">vs Forecast</button>
       </div>
+    </div>
+    <div id="dtcSampleNote" style="font-size:11px;color:var(--text-muted);margin-bottom:10px;"></div>
+    <div class="kpi-grid" id="dtcKpis"></div>
+    <div class="chart-container" style="margin-top:14px;">
+      <div class="chart-title">Weekly Trends &mdash; This Year vs Last Year vs Forecast <span class="chart-hint">(full fiscal year)</span>
+        <span style="float:right"><button class="period-btn" id="dtcViewAll" onclick="toggleDtcExpAll()">View all</button></span></div>
+      <div id="dtcExpChips" style="display:flex;flex-wrap:wrap;gap:5px;margin:8px 0;"></div>
+      <div id="dtcExpBody"></div>
     </div>
     <div class="chart-row">
-      <div class="chart-container" style="position:relative">
-        <div class="chart-title" id="dtcSpendTitle">Ad Spend by Channel</div>
-        <div style="position:relative;height:260px"><canvas id="dtcSpendChart"></canvas></div>
-      </div>
-      <div class="chart-container" style="position:relative">
-        <div class="chart-title" id="dtcCustTitle">New vs Repeat Customers</div>
-        <div style="position:relative;height:260px"><canvas id="dtcCustChart"></canvas></div>
-      </div>
+      <div class="chart-container"><div class="chart-title">Sessions &amp; Conversion Rate</div><div style="position:relative;height:280px"><canvas id="dtcSessChart"></canvas></div></div>
+      <div class="chart-container"><div class="chart-title">Paid Media vs Gross Sales &amp; MER</div><div style="position:relative;height:280px"><canvas id="dtcSpendChart"></canvas></div></div>
     </div>
     <div class="chart-row">
-      <div class="chart-container" style="position:relative">
-        <div class="chart-title" id="dtcConvTitle">Conversion Rate Trend</div>
-        <div style="position:relative;height:260px"><canvas id="dtcConvChart"></canvas></div>
-      </div>
-      <div class="chart-container" style="position:relative">
-        <div class="chart-title">Cohort Retention</div>
-        <div id="dtcCohortHeatmap" style="overflow-x:auto;"></div>
-      </div>
+      <div class="chart-container"><div class="chart-title">Revenue by Channel <span class="chart-hint">(sample split)</span></div><div style="position:relative;height:280px"><canvas id="dtcChanChart"></canvas></div></div>
+      <div class="chart-container"><div class="chart-title">New vs Returning Customers</div><div style="position:relative;height:280px"><canvas id="dtcCustChart"></canvas></div></div>
     </div>
-    <div class="table-container">
-      <div class="table-title" id="dtc-table-title">Recent Performance</div>
-      <div id="dtc-table" style="overflow-x:auto;"></div>
-    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:8px;" id="dtcSource"></div>
   `;
+  document.querySelectorAll('#dtcViewToggle .period-btn').forEach(b=>{b.onclick=()=>{window._dtcPeriod=b.dataset.v;document.querySelectorAll('#dtcViewToggle .period-btn').forEach(x=>x.classList.toggle('active',x===b));renderDTCFromState();};});
+  document.querySelectorAll('#dtcCmpToggle .period-btn').forEach(b=>{b.onclick=()=>{window._dtcCmp=b.dataset.cmp;document.querySelectorAll('#dtcCmpToggle .period-btn').forEach(x=>x.classList.toggle('active',x===b));renderDTCFromState();};});
+  const src=document.getElementById('dtcSource');if(src)src.textContent='Source: '+(DTCD.source||'');
   renderDTCFromState();
 }
 
 function renderDTCFromState(){
-  if(!DTC_DAILY.length)return;
-  const p=state.period;
-  let viewDays=DTC_DAILY;
-  let periodLabel='YTD';
-  if(p==='wk'){viewDays=DTC_DAILY.slice(-7);periodLabel='Last 7 Days';}
-  else if(p==='mtd'){
-    // Filter to current month only
-    const lastDate=DTC_DAILY[DTC_DAILY.length-1].date;
-    const curMonth=lastDate.substring(0,7); // "YYYY-MM"
-    viewDays=DTC_DAILY.filter(d=>d.date.startsWith(curMonth));
-    periodLabel='MTD';
+  if(!DTCD.available)return;
+  renderDTCKPIs();
+  renderDtcExplorer();
+  renderDTCComposite();
+}
+
+function tile(label,fmt,o,higherBetter,sample,tip){
+  const clickable=DTC_TREND[label]?` onclick="openDtcTrend('${label}')" style="cursor:pointer"`:'';
+  const arrow=DTC_TREND[label]?' <span style="color:var(--accent,#954F72)">&#8599;</span>':'';
+  const pill=sample?' <span style="font-size:8px;background:rgba(212,160,23,.15);color:#a8631e;padding:1px 5px;border-radius:6px;">SAMPLE</span>':'';
+  const tipH=tip?`<span class="tip">${tip}</span>`:'';
+  return `<div class="kpi-card has-tooltip"${clickable}><div class="kpi-label">${dtcDisp(label)}${arrow}${pill}</div><div class="kpi-value">${_dtcFmt(fmt,o.a)}</div>${dtcDelta(o.a,o.c,higherBetter)}${tipH}</div>`;
+}
+
+function renderDTCKPIs(){
+  const weeks=_dtcWeeks(),cmp=window._dtcCmp;const B=name=>_dtcSumBase(name,weeks,cmp);
+  const der=def=>_dtcDerived(def,weeks,cmp);
+  let h='';
+  h+=tile('eComm Sales','$',B('eComm Sales'),true,false,'Shopify gross sales for the period.');
+  h+=tile('Orders','n',B('Orders'),true,false,'Total Shopify orders.');
+  h+=tile('AOV','$2',der(DTC_TREND['AOV']),true,false,'Average order value (Sales &divide; Orders).');
+  h+=tile('Sessions','n',B('Sessions'),true,false,'Online-store sessions.');
+  h+=tile('Conversion Rate','pct',der(DTC_TREND['Conversion Rate']),true,false,'Orders &divide; Sessions.');
+  h+=tile('New Customers','n',B('New Customers'),true,false,'First-time shoppers.');
+  h+=tile('AUR','$2',der(DTC_TREND['AUR']),true,false,'Average unit retail (Sales &divide; Units).');
+  h+=tile('UPT','x',der(DTC_TREND['UPT']),true,false,'Units per transaction.');
+  h+=tile('Paid Media Spend','$',B('Paid Media Spend'),false,false,'Meta + Google + TikTok spend.');
+  h+=tile('MER (bROAS)','x',der(DTC_TREND['MER (bROAS)']),true,false,'Blended ROAS (Sales &divide; Spend).');
+  h+=tile('bCAC','$2',der(DTC_TREND['bCAC']),false,false,'Blended CAC (Spend &divide; New Customers).');
+  h+=tile('% New','pct',der(DTC_TREND['% New']),true,false,'% of orders from new customers.');
+  document.getElementById('dtcKpis').innerHTML=h;
+  const sn=document.getElementById('dtcSampleNote');
+  if(sn)sn.innerHTML=DTCD.channels_sample?'&#9888;&#65039; Channel revenue split is illustrative sample data; LY for non-revenue metrics is modeled from the eComm YoY trend.':'';
+}
+
+function _dtcExpKeys(){return Object.keys(DTC_TREND);}
+function selectDtcExpIdx(i){window._dtcExpMetric=_dtcExpKeys()[i];window._dtcExpAll=false;renderDtcExplorer();}
+function toggleDtcExpAll(){window._dtcExpAll=!window._dtcExpAll;renderDtcExplorer();}
+
+function _dtcTrendConfig(key){
+  const def=DTC_TREND[key];const NW=52,labels=[];for(let w=1;w<=NW;w++)labels.push('W'+w);
+  function series(side){const out=[];for(let w=1;w<=NW;w++){let v;if(def.base){v=_dtcMV(def.base,side,w);}else{const n=_dtcMV(def.num,side,w),d=_dtcMV(def.den,side,w);v=(n!=null&&d)?n/d*(def.mult||1):null;}out.push(v);}return out;}
+  const ty=series('act'),ly=series('ly');
+  const hasFc=def.base&&DTCD.metrics[def.base]&&Object.keys(DTCD.metrics[def.base].fcst||{}).length;
+  const fcst=hasFc?series('fcst'):null;
+  return{labels,ty,ly,fcst,noLY:!ly.some(v=>v!=null)};
+}
+function _dtcDrawTrend(canvasId,key){
+  const cfg=_dtcTrendConfig(key);const cv=document.getElementById(canvasId);if(!cv)return;
+  const ex=Chart.getChart(cv);if(ex)ex.destroy();
+  const ds=[
+    {label:'This Year',data:cfg.ty,borderColor:'#727F97',backgroundColor:'rgba(114,127,151,.08)',borderWidth:2,tension:.3,fill:true,pointRadius:0,spanGaps:true},
+    {label:'Last Year',data:cfg.ly,borderColor:'#A5ABAF',borderDash:[5,4],borderWidth:1.5,tension:.3,fill:false,pointRadius:0,spanGaps:true},
+  ];
+  if(cfg.fcst)ds.push({label:'Forecast',data:cfg.fcst,borderColor:'#5B9BD5',borderDash:[3,3],borderWidth:1.5,tension:.3,fill:false,pointRadius:0,spanGaps:true});
+  const c=new Chart(cv,{type:'line',data:{labels:cfg.labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{x:{title:{display:true,text:'Fiscal Week'}},y:{ticks:{callback:v=>_dtcFmt(DTC_TREND[key].fmt,v)}}}}});
+  window._dtcCharts.push(c);return c;
+}
+function renderDtcExplorer(){
+  window._dtcCharts.forEach(c=>{try{c.destroy();}catch(e){}});window._dtcCharts=[];
+  const keys=_dtcExpKeys();
+  document.getElementById('dtcExpChips').innerHTML=keys.map((k,i)=>{const on=(!window._dtcExpAll&&k===window._dtcExpMetric);return `<button onclick="selectDtcExpIdx(${i})" class="period-btn${on?' active':''}" style="font-size:11px;">${dtcDisp(k)}</button>`;}).join('');
+  const va=document.getElementById('dtcViewAll');if(va)va.classList.toggle('active',window._dtcExpAll);
+  const body=document.getElementById('dtcExpBody');
+  if(window._dtcExpAll){
+    body.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;">'+keys.map((k,i)=>`<div><div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:2px;">${dtcDisp(k)}</div><div style="position:relative;height:180px"><canvas id="dtcExp_${i}"></canvas></div></div>`).join('')+'</div>';
+    keys.forEach((k,i)=>_dtcDrawTrend('dtcExp_'+i,k));
+  } else {
+    body.innerHTML='<div style="position:relative;height:340px"><canvas id="dtcExpChart"></canvas></div>';
+    _dtcDrawTrend('dtcExpChart',window._dtcExpMetric);
   }
-  else if(p==='l4w'){viewDays=DTC_DAILY.slice(-28);periodLabel='Last 4 Weeks';}
-  else{periodLabel='YTD';}
-
-  const sum=(arr,k)=>arr.reduce((s,d)=>s+(d[k]||0),0);
-  const vRev=sum(viewDays,'gross_sales');
-  const vRevTarget=sum(viewDays,'gross_sales_target');
-  const vSpend=sum(viewDays,'ad_spend');
-  const vSpendTarget=sum(viewDays,'ad_spend_target');
-  const vNewCust=sum(viewDays,'new_customers');
-  const vNewCustTarget=sum(viewDays,'new_customers_target');
-  const vRetCust=sum(viewDays,'returning_customers');
-  const vTotalCust=vNewCust+vRetCust;
-  const vOrders=sum(viewDays,'orders');
-  const vUnits=sum(viewDays,'units');
-  const vSessions=sum(viewDays,'sessions');
-  const vNCR=sum(viewDays,'ncr');
-  const vNCRTarget=sum(viewDays,'ncr_target');
-  const roas=vSpend>0?vRev/vSpend:null;
-  const roasTarget=vSpendTarget>0?vRevTarget/vSpendTarget:null;
-  const cac=vNewCust>0?vSpend/vNewCust:null;
-  const cacTarget=vNewCustTarget>0?vSpendTarget/vNewCustTarget:null;
-  const newCustPct=vTotalCust>0?vNewCust/vTotalCust*100:null;
-  const aov=vOrders>0?vRev/vOrders:null;
-  const convRate=vSessions>0?vOrders/vSessions*100:null;
-  const upt=vOrders>0?vUnits/vOrders:null;
-  const aur=vUnits>0?vRev/vUnits:null;
-
-  // For cumulative pacing: show target for the full period scope
-  // MTD → all days in current month; YTD → all days; wk/l4w → same as viewDays
-  let pacingDays=viewDays;
-  if(p==='mtd'){
-    const lastDate=DTC_DAILY[DTC_DAILY.length-1].date;
-    const curMonth=lastDate.substring(0,7);
-    pacingDays=DTC_DAILY.filter(d=>d.date.startsWith(curMonth));
-  } else if(!p||p==='ytd'){
-    pacingDays=DTC_DAILY;
-  }
-
-  renderDTCKPIs({vRev,vRevTarget,vSpend,vSpendTarget,roas,roasTarget,cac,cacTarget,vNewCust,vNewCustTarget,newCustPct,aov,convRate,upt,aur,vNCR,vNCRTarget,periodLabel});
-  renderDTCCharts(viewDays,pacingDays,periodLabel);
-  renderDTCCohort();
-  renderDTCTable(viewDays,periodLabel);
 }
+function openDtcTrend(key){if(!DTC_TREND[key]||!DTCD.available)return;showModal(dtcDisp(key)+' &mdash; Weekly Trend (TY vs LY vs Forecast)','<div style="position:relative;height:400px"><canvas id="dtcTrendModal"></canvas></div>');_dtcDrawTrend('dtcTrendModal',key);}
 
-function renderDTCKPIs(m){
-  const fmtD=v=>v===null?'—':'$'+Math.round(v).toLocaleString();
-  const fmtX=v=>v===null?'—':v.toFixed(2)+'x';
-  const fmtC=v=>v===null?'—':'$'+v.toFixed(2);
-  const fmtI=v=>v===null?'—':Math.round(v).toLocaleString();
-  const fmtP=v=>v===null?'—':v.toFixed(1)+'%';
-  const fmtU=v=>v===null?'—':v.toFixed(2);
-  const lbl=m.periodLabel;
-
-  function tile(label,actVal,tgtVal,fmtFn,higherIsBetter,tip){
-    const val=fmtFn(actVal);
-    let deltaHtml='';
-    if(actVal!==null&&tgtVal!==null&&tgtVal!==0){
-      const diff=actVal-tgtVal;
-      const diffPct=diff/Math.abs(tgtVal)*100;
-      const pos=higherIsBetter?(diff>=0):(diff<=0);
-      const col=pos?'#5CB85C':'#D9534F';
-      const arrow=diff>=0?'▲':'▼';
-      deltaHtml=`<div class="kpi-sub" style="color:${col};font-size:12px;margin-top:4px">${arrow} ${Math.abs(diffPct).toFixed(1)}% vs target</div>`;
-    }
-    const tipHtml=tip?`<span class="tip">${tip}</span>`:'';
-    return`<div class="kpi-card has-tooltip" style="cursor:default"><div class="kpi-label">${label}</div><div class="kpi-value">${val}</div>${deltaHtml}${tipHtml}</div>`;
-  }
-
-  let html='';
-  html+=tile(`${lbl} Gross Sales`,m.vRev,m.vRevTarget,fmtD,true,
-    `<b>Calc:</b> Sum of daily Gross Sales<br><b>Target:</b> Sum of daily target`);
-  html+=tile(`${lbl} Ad Spend`,m.vSpend,m.vSpendTarget,fmtD,false,
-    `<b>Calc:</b> Meta + Google + TikTok spend<br><b>Note:</b> Under-budget = green`);
-  html+=tile(`ROAS — ${lbl}`,m.roas,m.roasTarget,fmtX,true,
-    `<b>Calc:</b> Gross Sales ÷ Ad Spend`);
-  html+=tile(`Paid CAC — ${lbl}`,m.cac,m.cacTarget,fmtC,false,
-    `<b>Calc:</b> Ad Spend ÷ New Customers<br><b>Note:</b> Lower is better`);
-  html+=tile(`${lbl} New Customers`,m.vNewCust,m.vNewCustTarget,fmtI,true,
-    `<b>Calc:</b> Sum of daily new customer count`);
-  html+=tile(`New Customer %`,m.newCustPct,null,fmtP,true,
-    `<b>Calc:</b> New Customers ÷ Total Customers`);
-  html+=tile(`Conversion Rate`,m.convRate,null,fmtP,true,
-    `<b>Calc:</b> Orders ÷ Sessions × 100`);
-  html+=tile(`AOV — ${lbl}`,m.aov,null,fmtC,true,
-    `<b>Calc:</b> Gross Sales ÷ Orders`);
-  html+=tile(`UPT — ${lbl}`,m.upt,null,fmtU,true,
-    `<b>Calc:</b> Units ÷ Orders`);
-  html+=tile(`AUR — ${lbl}`,m.aur,null,fmtC,true,
-    `<b>Calc:</b> Gross Sales ÷ Units`);
-  document.getElementById('dtc-kpis').innerHTML=html;
-}
-
-function _dtcDestroyCharts(){
-  ['dtcRevChart','dtcCumChart','dtcSpendChart','dtcCustChart','dtcConvChart'].forEach(id=>{
-    const c=Chart.getChart(id);if(c)c.destroy();
-  });
-}
-
-function renderDTCCharts(viewDays,allDays,periodLabel){
-  _dtcDestroyCharts();
-  const labels=viewDays.map(d=>d.date);
-  const gridColor='#E8E2D3';
-  const dollarTick=v=>'$'+Math.round(v/1000)+'K';
-  const dollarTip=c=>'$'+Math.round(c.parsed.y||0).toLocaleString();
-  const el=id=>document.getElementById(id);
-  if(el('dtcRevTitle'))el('dtcRevTitle').textContent=`Daily Gross Sales vs Target — ${periodLabel}`;
-  if(el('dtcCumTitle'))el('dtcCumTitle').textContent=`Cumulative Gross Sales Pacing — ${periodLabel}`;
-  if(el('dtcSpendTitle'))el('dtcSpendTitle').textContent=`Ad Spend by Channel — ${periodLabel}`;
-  if(el('dtcCustTitle'))el('dtcCustTitle').textContent=`New vs Repeat Customers — ${periodLabel}`;
-  if(el('dtcConvTitle'))el('dtcConvTitle').textContent=`Conversion Rate Trend — ${periodLabel}`;
-
-  const yDollar={title:{display:true,text:'Gross Sales ($)',color:'#737F94',font:{size:10}},ticks:{callback:dollarTick},grid:{color:gridColor}};
-  const yDollarSpend={title:{display:true,text:'Ad Spend ($)',color:'#737F94',font:{size:10}},ticks:{callback:dollarTick},grid:{color:gridColor}};
-  const yCust={title:{display:true,text:'Customers',color:'#737F94',font:{size:10}},ticks:{callback:v=>Math.round(v).toLocaleString()},grid:{color:gridColor}};
-  const yPct={title:{display:true,text:'Conv. Rate %',color:'#737F94',font:{size:10}},ticks:{callback:v=>v.toFixed(1)+'%'},grid:{color:gridColor}};
-  const xBase={grid:{display:false},title:{display:true,text:'Date',color:'#737F94',font:{size:10}}};
-  const legendOpts={position:'bottom',labels:{color:'#A5ABAF',font:{size:11}}};
-
-  // 1. Daily Gross Sales vs Target
-  new Chart(el('dtcRevChart').getContext('2d'),{
-    type:'bar',
-    data:{labels,datasets:[
-      {label:'Gross Sales',data:viewDays.map(d=>d.gross_sales),backgroundColor:'#727F97',order:2},
-      {label:'Target',data:viewDays.map(d=>d.gross_sales_target),type:'line',borderColor:'#954F72',backgroundColor:'transparent',borderWidth:2,pointRadius:3,order:1}
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{...legendOpts},tooltip:{callbacks:{label:c=>c.dataset.label+': '+dollarTip(c)}}},
-      scales:{y:{...yDollar},x:{...xBase,stacked:false}}}
-  });
-
-  // 2. Cumulative Gross Sales Pacing
-  let cumAct=0;
-  const cumActData=allDays.map((d,i)=>{if(i<viewDays.length){cumAct+=(d.gross_sales||0);return cumAct;}return null;});
-  let cumTgt=0;
-  const cumTgtData=allDays.map(d=>{cumTgt+=(d.gross_sales_target||0);return cumTgt;});
-  const allLabels=allDays.map(d=>d.date);
-  new Chart(el('dtcCumChart').getContext('2d'),{
-    type:'line',
-    data:{labels:allLabels,datasets:[
-      {label:'Full-Month Target',data:cumTgtData,borderColor:'#954F72',backgroundColor:'transparent',borderDash:[5,5],tension:0.3,pointRadius:0},
-      {label:'Actual Cumulative',data:cumActData,borderColor:'#727F97',backgroundColor:'rgba(114,127,151,0.1)',fill:true,tension:0.3,pointRadius:3}
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{...legendOpts},tooltip:{callbacks:{label:c=>c.parsed.y!==null?c.dataset.label+': '+dollarTip(c):'—'}}},
-      scales:{y:{...yDollar},x:{...xBase}}}
-  });
-
-  // 3. Ad Spend by Channel (stacked)
-  new Chart(el('dtcSpendChart').getContext('2d'),{
-    type:'bar',
-    data:{labels,datasets:[
-      {label:'Meta',data:viewDays.map(d=>d.meta_spend),backgroundColor:'#727F97'},
-      {label:'Google',data:viewDays.map(d=>d.google_spend),backgroundColor:'#8FA1A2'},
-      {label:'TikTok',data:viewDays.map(d=>d.tiktok_spend),backgroundColor:'#EDDCBD'}
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{...legendOpts},tooltip:{mode:'index',callbacks:{label:c=>c.dataset.label+': '+dollarTip(c),footer:items=>'Total: $'+Math.round(items.reduce((s,c)=>s+(c.parsed.y||0),0)).toLocaleString()}}},
-      scales:{x:{stacked:true,...xBase},y:{stacked:true,...yDollarSpend}}}
-  });
-
-  // 4. New vs Repeat Customers (stacked)
-  new Chart(el('dtcCustChart').getContext('2d'),{
-    type:'bar',
-    data:{labels,datasets:[
-      {label:'New Customers',data:viewDays.map(d=>d.new_customers||0),backgroundColor:'#517176'},
-      {label:'Repeat Customers',data:viewDays.map(d=>d.returning_customers||0),backgroundColor:'#8FA1A2'}
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{...legendOpts},tooltip:{mode:'index',callbacks:{footer:items=>'Total: '+Math.round(items.reduce((s,c)=>s+(c.parsed.y||0),0)).toLocaleString()}}},
-      scales:{x:{stacked:true,...xBase},y:{stacked:true,...yCust}}}
-  });
-
-  // 5. Conversion Rate Trend
-  new Chart(el('dtcConvChart').getContext('2d'),{
-    type:'line',
-    data:{labels,datasets:[
-      {label:'Conversion Rate',data:viewDays.map(d=>d.conversion_rate),borderColor:'#517176',backgroundColor:'rgba(81,113,118,0.1)',fill:true,tension:0.3,pointRadius:4,pointBackgroundColor:'#517176'}
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{...legendOpts},tooltip:{callbacks:{label:c=>c.parsed.y!==null?c.parsed.y.toFixed(2)+'%':'—'}}},
-      scales:{y:{...yPct,min:0},x:{...xBase}}}
-  });
-}
-
-function renderDTCCohort(){
-  const container=document.getElementById('dtcCohortHeatmap');
-  if(!container||!DTC_COHORTS.length){if(container)container.innerHTML='<p style="color:#A5ABAF;padding:12px;font-size:12px;">No cohort data available.</p>';return;}
-  const maxM=Math.max(...DTC_COHORTS.map(c=>(c.retention||[]).length));
-  const th=h=>`<th style="padding:6px 10px;text-align:center;color:#737F94;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;">${h}</th>`;
-  let hdr=`<tr>${th('Cohort')}${th('New Cust')}`;
-  for(let i=1;i<=maxM;i++) hdr+=th('M'+i+' %');
-  hdr+='</tr>';
-
-  const heatColor=(pct)=>{
-    if(pct>=25) return 'rgba(81,113,118,0.35)';
-    if(pct>=20) return 'rgba(81,113,118,0.28)';
-    if(pct>=15) return 'rgba(81,113,118,0.20)';
-    if(pct>=10) return 'rgba(81,113,118,0.14)';
-    if(pct>=5) return 'rgba(81,113,118,0.08)';
-    return 'transparent';
-  };
-
-  let rows='';
-  DTC_COHORTS.forEach(c=>{
-    const nc=c.new_customers||0;
-    let r=`<tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;font-weight:500;font-size:12px;white-space:nowrap;">${c.month}</td>`;
-    r+=`<td style="padding:6px 10px;text-align:center;font-size:12px;">${nc.toLocaleString()}</td>`;
-    for(let i=0;i<maxM;i++){
-      const ret=(c.retention||[])[i];
-      if(ret!==undefined&&ret!==null){
-        const pct=nc>0?ret/nc*100:0;
-        r+=`<td style="padding:6px 10px;text-align:center;font-size:12px;background:${heatColor(pct)};font-weight:500;">${pct.toFixed(1)}%</td>`;
-      } else {
-        r+=`<td style="padding:6px 10px;text-align:center;color:#DAD9D7;">—</td>`;
-      }
-    }
-    r+='</tr>';
-    rows+=r;
-  });
-
-  container.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead style="background:var(--surface2);border-bottom:1px solid var(--border);">${hdr}</thead><tbody>${rows}</tbody></table>`;
-}
-
-function renderDTCTable(viewDays,periodLabel){
-  const el=document.getElementById('dtc-table-title');
-  if(el)el.textContent=`Recent Performance — ${periodLabel}`;
-  const tbl=document.getElementById('dtc-table');
-  if(!viewDays.length){tbl.innerHTML='<p style="color:#A5ABAF;padding:16px">No data</p>';return;}
-  const fmtD=v=>v===null||v===undefined?'—':'$'+Math.round(v).toLocaleString();
-  const fmtX=v=>v===null||v===undefined?'—':v.toFixed(2)+'x';
-  const fmtP=v=>v===null||v===undefined?'—':v.toFixed(1)+'%';
-  const fmtI=v=>v===null||v===undefined?'—':Math.round(v).toLocaleString();
-  const fmtC=v=>v===null||v===undefined?'—':'$'+v.toFixed(2);
-  const fmtU=v=>v===null||v===undefined?'—':v.toFixed(2);
-  const diffCellD=(act,tgt)=>{
-    if(!act||!tgt)return'<td style="padding:6px 10px;text-align:right;color:#A5ABAF">—</td>';
-    const diff=act-tgt;const pos=diff>=0;
-    const col=pos?'#5CB85C':'#D9534F';
-    return`<td style="padding:6px 10px;text-align:right;color:${col}">${pos?'+':''}${fmtD(diff)}</td>`;
-  };
-  const diffCellP=(act,tgt)=>{
-    if(!act||!tgt||tgt===0)return'<td style="padding:6px 10px;text-align:right;color:#A5ABAF">—</td>';
-    const pct=(act-tgt)/Math.abs(tgt)*100;const pos=pct>=0;
-    const col=pos?'#5CB85C':'#D9534F';
-    return`<td style="padding:6px 10px;text-align:right;color:${col}">${pos?'+':''}${pct.toFixed(1)}%</td>`;
-  };
-  const th=h=>`<th style="padding:6px 10px;text-align:right;white-space:nowrap;color:#737F94;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.4px">${h}</th>`;
-  const thL=h=>`<th style="padding:6px 10px;text-align:left;color:#737F94;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.4px">${h}</th>`;
-  let t=`<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">${thL('Date')}${th('Gross Sales')}${th('vs Tgt $')}${th('vs Tgt %')}${th('Ad Spend')}${th('ROAS')}${th('Conv %')}${th('New Cust')}${th('New %')}${th('Paid CAC')}${th('AOV')}${th('UPT')}${th('AUR')}</tr></thead><tbody>`;
-  [...viewDays].reverse().forEach(d=>{
-    t+=`<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:6px 10px;text-align:left;font-weight:500;white-space:nowrap;">${d.date}</td>
-      <td style="padding:6px 10px;text-align:right">${fmtD(d.gross_sales)}</td>
-      ${diffCellD(d.gross_sales,d.gross_sales_target)}
-      ${diffCellP(d.gross_sales,d.gross_sales_target)}
-      <td style="padding:6px 10px;text-align:right">${fmtD(d.ad_spend)}</td>
-      <td style="padding:6px 10px;text-align:right">${fmtX(d.roas)}</td>
-      <td style="padding:6px 10px;text-align:right">${fmtP(d.conversion_rate)}</td>
-      <td style="padding:6px 10px;text-align:right">${fmtI(d.new_customers)}</td>
-      <td style="padding:6px 10px;text-align:right">${fmtP(d.new_cust_pct)}</td>
-      <td style="padding:6px 10px;text-align:right">${fmtC(d.paid_cac)}</td>
-      <td style="padding:6px 10px;text-align:right">${fmtC(d.aov)}</td>
-      <td style="padding:6px 10px;text-align:right">${fmtU(d.upt)}</td>
-      <td style="padding:6px 10px;text-align:right">${fmtC(d.aur)}</td>
-    </tr>`;
-  });
-  t+='</tbody></table>';
-  tbl.innerHTML=t;
+function renderDTCComposite(){
+  const wks=DTCD.weeks;const labels=wks.map(w=>'W'+w);
+  const get=(name,side)=>wks.map(w=>_dtcMV(name,side,w));
+  dc('dtcSessChart');
+  const conv=wks.map(w=>{const o=_dtcMV('Online Store Orders','act',w),s=_dtcMV('Sessions','act',w);return (o!=null&&s)?o/s*100:null;});
+  charts['dtcSessChart']=new Chart(document.getElementById('dtcSessChart'),{data:{labels,datasets:[
+    {type:'bar',label:'Sessions',data:get('Sessions','act'),backgroundColor:'rgba(143,161,162,.5)',yAxisID:'y'},
+    {type:'line',label:'Conversion %',data:conv,borderColor:'#5CB85C',borderWidth:2,tension:.3,yAxisID:'y1',pointRadius:0},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{y:{position:'left',ticks:{callback:v=>fmtN(v)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v.toFixed(1)+'%'}}}}});
+  dc('dtcSpendChart');
+  const mer=wks.map(w=>{const s=_dtcMV('eComm Sales','act',w),p=_dtcMV('Paid Media Spend','act',w);return (s!=null&&p)?s/p:null;});
+  charts['dtcSpendChart']=new Chart(document.getElementById('dtcSpendChart'),{data:{labels,datasets:[
+    {type:'bar',label:'Paid Media',data:get('Paid Media Spend','act'),backgroundColor:'rgba(212,160,23,.55)',yAxisID:'y'},
+    {type:'line',label:'eComm Gross Sales',data:get('eComm Sales','act'),borderColor:'#727F97',borderWidth:2,tension:.3,yAxisID:'y',pointRadius:0},
+    {type:'line',label:'MER',data:mer,borderColor:'#954F72',borderDash:[4,3],borderWidth:1.5,tension:.3,yAxisID:'y1',pointRadius:0},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{y:{position:'left',ticks:{callback:v=>fmtK(v)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v.toFixed(1)+'x'}}}}});
+  dc('dtcChanChart');
+  const chans=Object.keys(DTCD.channels||{});
+  charts['dtcChanChart']=new Chart(document.getElementById('dtcChanChart'),{type:'bar',data:{labels,datasets:chans.map(ch=>({label:ch,data:wks.map(w=>DTCD.channels[ch][w]||0),backgroundColor:DTC_CH_COLORS[ch]||'#999',stack:'s'}))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>fmtK(v)}}}}});
+  dc('dtcCustChart');
+  charts['dtcCustChart']=new Chart(document.getElementById('dtcCustChart'),{type:'bar',data:{labels,datasets:[
+    {label:'New',data:get('New Customers','act'),backgroundColor:'#727F97',stack:'c'},
+    {label:'Returning',data:get('Returning','act'),backgroundColor:'rgba(143,161,162,.7)',stack:'c'},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>fmtN(v)}}}}});
 }
 
 // =====================================================================
