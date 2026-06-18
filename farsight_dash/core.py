@@ -225,3 +225,61 @@ def pct_or_na(numerator, denominator):
     pct = (numerator - denominator) / abs(denominator) * 100
     color = "#5CB85C" if pct >= 0 else "#D9534F"
     return f"{pct:+.1f}%", color
+
+
+def freshness_quality_report(config, sales_df, sku_info, loc_df, meta):
+    """Pre-build data freshness + data-quality audit. Prints warnings; never halts."""
+    print("Data freshness & quality check...")
+    cw = meta.get('current_week') or 0
+    cy = config['calendar']['current_year']
+    warns = []
+    try:
+        cur = sales_df[sales_df['Year'] == cy]
+        for ret, grp in cur.groupby('Retailer'):
+            mw = int(grp['Week'].max())
+            if mw < cw - 1:
+                warns.append(f"{ret} sell-through only through W{mw} (dashboard at W{cw})")
+    except Exception:
+        pass
+    if loc_df is not None and 'Week' in getattr(loc_df, 'columns', []):
+        try:
+            lw = int(loc_df[loc_df['Year'] == cy]['Week'].max())
+            if lw < cw - 1:
+                warns.append(f"Sephora door data only through W{lw} (dashboard at W{cw})")
+        except Exception:
+            pass
+    dd = (config.get('_dtc_perf') or {}).get('daily_df')
+    if dd is not None and len(dd) and 'Date' in dd.columns:
+        try:
+            import pandas as pd
+            last = pd.to_datetime(dd['Date'], errors='coerce').max()
+            we = meta.get('current_week_end')
+            if last is not None and we is not None and (we - last).days > 10:
+                warns.append(f"DTC daily only through {last.date()} (week-end {we.date()})")
+        except Exception:
+            pass
+    # Quality
+    try:
+        codes = set(int(x) for x in sales_df['Item Code'].dropna().unique())
+    except Exception:
+        codes = set()
+    unmapped = [c for c in codes if c not in sku_info]
+    no_srp = [c for c, info in sku_info.items() if not info.get('srp')]
+    door_missing = 0
+    if loc_df is not None:
+        for col in ('Region', 'State'):
+            if col in getattr(loc_df, 'columns', []):
+                try:
+                    door_missing += int(loc_df[col].isna().sum())
+                except Exception:
+                    pass
+    if warns:
+        print("  ⚠ FRESHNESS WARNINGS:")
+        for w in warns:
+            print("    - " + w)
+    else:
+        print(f"  ✓ All feeds current through W{cw}")
+    print(f"  Data quality: {len(unmapped)} unmapped SKU(s), {len(no_srp)} SKU(s) missing SRP, {door_missing} door row(s) missing region/state")
+    if unmapped[:5]:
+        print(f"    unmapped item codes (sample): {unmapped[:5]}")
+    return {'warnings': warns, 'unmapped': len(unmapped), 'no_srp': len(no_srp), 'door_missing': door_missing}

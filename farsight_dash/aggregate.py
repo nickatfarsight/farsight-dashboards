@@ -1,6 +1,6 @@
 """Aggregation functions for sell-through dashboard data structures."""
 
-import time
+import time, math
 from collections import defaultdict
 
 import pandas as pd
@@ -103,13 +103,22 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
     print("  Building new launches data...")
     new_launches = _build_new_launches(sales_df, skus, forecast_data, fc2d, current_year)
 
+    # ── 6h-2. SKU x Retailer x Week detail + Budget overlay ──
+    sku_ret_weekly = _build_sku_ret_weekly(sales_df, forecast_data, fc2d, current_year)
+    _apply_budget(weekly, monthly, ret_summary, skus, sku_weekly, sku_ret_weekly, current_week)
+
     # ── 6i-j. Location data ──
     loc_sales = []
     loc_weekly_data = []
     loc_meta = {'territories': [], 'regions': [], 'states': [], 'fixtures': [], 'volumes': [], 'loc_current_week': current_week}
+    sephora_productivity = {}
     if loc_df is not None and config['tabs'].get('doors', False):
         print("  Building location/door data...")
         loc_sales, loc_weekly_data, loc_meta = _build_location_data(loc_df, current_year, current_week)
+        sephora_productivity = _build_sephora_productivity(loc_sales, loc_weekly_data, current_week, week_month_map, current_year)
+
+    # ── Event (one-time-distortion) context callout for the current week ──
+    event_context = _build_event_context(ret_summary, config, current_week)
 
     print(f"  Data structures built ({time.time()-t:.1f}s)")
 
@@ -173,6 +182,9 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
         'inventory': inv_data,
         'dtc_perf': dtc_perf_data,
         'dtc': dtc_weekly,
+        'sku_ret_weekly': sku_ret_weekly,
+        'sephora_productivity': sephora_productivity,
+        'event_context': event_context,
         'annotations': config.get('_annotations', []),
         'daash': _build_daash(config.get('_daash', []), config),
     }
@@ -1235,10 +1247,16 @@ def _build_inventory_data(config, skus, sku_info, srp_map,
         }
         sku_list.append(rec)
 
+    po_total = sum((r.get('on_order') or 0) for r in sku_list)
+    proj = _build_inv_projection(sku_list, current_week, po_total)
     return {
         'sku_list': sku_list,
         'channels': sorted(channels),
         'aggregates': _inv_aggregates(sku_list),
+        'history': proj['history'],
+        'projection': proj['projection'],
+        'run_rate': proj['run_rate'],
+        'po_inbound': proj['po_inbound'],
     }
 
 
@@ -1431,3 +1449,186 @@ def _build_dtc(config, weekly, week_date_map, week_month_map, current_year):
                    'Customers and Paid Media are real (TY); eComm Sales LY is real; LY for other metrics '
                    'is illustrative. Channel split is sample data.'),
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# Budget + SKU×Retailer×Week + Event context + Productivity
+# ─────────────────────────────────────────────────────────────
+def _bf(wk):
+    """Deterministic budget factor vs forecast (oscillates ~0.89–1.03 by week)."""
+    return 0.96 + 0.07 * math.sin((wk or 0) / 3.0)
+
+
+def _build_sku_ret_weekly(sales_df, forecast_data, fc2d, current_year):
+    """SKU × Retailer × Week detail: {yr, ic, ret, wk, ty, ly, fc_d, bd_d}."""
+    g = sales_df.groupby(['Year', 'Item Code', 'Retailer', 'Week']).agg({
+        'TY Total Sales $': 'sum', 'LY Total Sales $': 'sum'}).reset_index()
+    out = []
+    for _, r in g.iterrows():
+        ty = float(r['TY Total Sales $']); ly = float(r['LY Total Sales $'])
+        if ty == 0 and ly == 0:
+            continue
+        yr = int(r['Year']); ic = int(r['Item Code']); wk = int(r['Week']); ret = r['Retailer']
+        fc_d = 0.0
+        if yr == current_year and ret in forecast_data:
+            fc_d = fc2d(ret, ic, forecast_data[ret].get((ic, wk), 0))
+        bd_d = round(fc_d * _bf(wk), 2) if fc_d else 0.0
+        out.append({'yr': yr, 'ic': ic, 'ret': ret, 'wk': wk,
+                    'ty': round(ty, 2), 'ly': round(ly, 2), 'fc_d': round(fc_d, 2), 'bd_d': bd_d})
+    return out
+
+
+def _apply_budget(weekly, monthly, ret_summary, skus, sku_weekly, sku_ret_weekly, current_week):
+    """Synthesize a Budget plan distinct from Forecast (no separate budget file in the demo).
+    Budget = forecast × per-week factor; added in place to all the structures the UI reads."""
+    for r in weekly:
+        r['bd_d'] = round((r.get('fc_d') or 0) * _bf(r.get('wk', 0)), 2)
+    for r in sku_weekly:
+        r['bd_d'] = round((r.get('fc_d') or 0) * _bf(r.get('wk', 0)), 2)
+    for r in monthly:
+        r['bd_d'] = round((r.get('fc_d') or 0) * 0.98, 2)
+    for r in ret_summary:
+        r['bd_d_ytd'] = round((r.get('fc_d_ytd') or 0) * 0.98, 2)
+        r['bd_d_mtd'] = round((r.get('fc_d_mtd') or 0) * 0.98, 2)
+        r['bd_d_wk'] = round((r.get('fc_d_wk') or 0) * _bf(current_week), 2)
+    for s in skus:
+        s['bd_d_ytd'] = round((s.get('fc_d_ytd') or 0) * 0.98, 2)
+
+
+def _build_event_context(ret_summary, config, current_week):
+    """One-time-distortion ('GMA-style') context for the current week: identify the retailer
+    driving the largest YoY swing and show the headline vs the ex-that-retailer comparison."""
+    by_ret = {r['ret']: r for r in ret_summary}
+    all_row = by_ret.get('All')
+    if not all_row:
+        return {'active': False}
+    all_wk = all_row.get('wk', 0) or 0
+    all_ly = all_row.get('wk_ly', 0) or 0
+    all_fc = all_row.get('fc_d_wk', 0) or 0
+    cands = [r for r in ret_summary if r['ret'] != 'All']
+    if not cands:
+        return {'active': False}
+    top = max(cands, key=lambda r: abs((r.get('wk', 0) or 0) - (r.get('wk_ly', 0) or 0)))
+    delta = (top.get('wk', 0) or 0) - (top.get('wk_ly', 0) or 0)
+    thresh = config.get('event_min_delta', max(15000, 0.06 * all_wk))
+    if abs(delta) < thresh or all_ly <= 0:
+        return {'active': False}
+    adj_ty = all_wk - (top.get('wk', 0) or 0)
+    adj_ly = all_ly - (top.get('wk_ly', 0) or 0)
+    adj_fc = all_fc - (top.get('fc_d_wk', 0) or 0)
+    cfg_ret = (config.get('event_callout') or {}).get('retailer')
+    label = (config.get('event_callout') or {}).get('label') if cfg_ret == top['ret'] else None
+    return {
+        'active': True,
+        'retailer': top['ret'],
+        'label': label,
+        'ty': round(top.get('wk', 0) or 0), 'ly': round(top.get('wk_ly', 0) or 0),
+        'delta': round(delta),
+        'headline_pct': round((all_wk - all_ly) / abs(all_ly) * 100, 1) if all_ly else None,
+        'all_ty': round(all_wk), 'all_ly': round(all_ly),
+        'adj_ty': round(adj_ty), 'adj_ly': round(adj_ly),
+        'adj_pct': round((adj_ty - adj_ly) / abs(adj_ly) * 100, 1) if adj_ly > 0 else None,
+        'adj_fc': round(adj_fc),
+        'adj_fc_pct': round((adj_ty - adj_fc) / abs(adj_fc) * 100, 1) if adj_fc > 0 else None,
+    }
+
+
+def _classify_fixture(fix):
+    f = (fix or '').lower()
+    if 'end' in f or 'cap' in f or 'ec' == f.strip():
+        return 'endcap'
+    return 'linear'
+
+
+def _build_sephora_productivity(loc_sales, loc_weekly, current_week, week_month_map, current_year):
+    """Demo Sephora Productivity: homebay index (modeled), endcap vs linear, $/door by tier.
+    Computed from door-level data (no external EOM/productivity files in the demo)."""
+    if not loc_sales:
+        return {}
+    MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    n_doors = len(loc_sales)
+    vol_by_loc = {d['loc']: (d.get('vol') or 'Unrated') for d in loc_sales}
+    fix_by_loc = {d['loc']: _classify_fixture(d.get('fix')) for d in loc_sales}
+    # monthly TY/LY $ and endcap/linear split from weekly per-door series
+    mo_ty = {m: 0.0 for m in MONTHS}; mo_ly = {m: 0.0 for m in MONTHS}
+    ec = {m: 0.0 for m in MONTHS}; lin = {m: 0.0 for m in MONTHS}
+    ec_ly = {m: 0.0 for m in MONTHS}; lin_ly = {m: 0.0 for m in MONTHS}
+    for lw in (loc_weekly or []):
+        fx = fix_by_loc.get(lw.get('loc'))
+        for w in lw.get('weeks', []):
+            mo = week_month_map.get((current_year, w.get('wk')), '')
+            if mo not in mo_ty:
+                continue
+            mo_ty[mo] += w.get('ty', 0) or 0; mo_ly[mo] += w.get('ly', 0) or 0
+            if fx == 'endcap':
+                ec[mo] += w.get('ty', 0) or 0; ec_ly[mo] += w.get('ly', 0) or 0
+            else:
+                lin[mo] += w.get('ty', 0) or 0; lin_ly[mo] += w.get('ly', 0) or 0
+    months_with = [m for m in MONTHS if mo_ty[m] > 0]
+    # modeled homebay productivity index (0–1.1), tied to $/door scaled to a baseline
+    dpm_ty = [mo_ty[m] / n_doors if n_doors else 0 for m in MONTHS]
+    peak = max(dpm_ty) or 1
+    homebay_ty = [round(min(1.1, 0.45 + 0.55 * (v / peak)), 3) if v > 0 else None for v in dpm_ty]
+    homebay_ly = [round(v * (0.90 + 0.04 * math.sin(i / 1.5)), 3) if v else None
+                  for i, v in enumerate(homebay_ty)]
+    # $/door by volume tier (YTD)
+    tier_order = ['A++', 'A+', 'A', 'B', 'C', 'D', 'E', 'Unrated']
+    tier = {}
+    for d in loc_sales:
+        v = d.get('vol') or 'Unrated'
+        t = tier.setdefault(v, {'vol': v, 'doors': 0, 'ytd': 0.0})
+        t['doors'] += 1; t['ytd'] += d.get('ytd', 0) or 0
+    tier_rows = sorted(tier.values(), key=lambda r: (tier_order.index(r['vol']) if r['vol'] in tier_order else 99))
+    for r in tier_rows:
+        r['per_door'] = round(r['ytd'] / r['doors'], 0) if r['doors'] else 0
+        r['ytd'] = round(r['ytd'], 0)
+    return {
+        'months': MONTHS,
+        'months_with': months_with,
+        'ty_monthly_sales': [round(mo_ty[m]) for m in MONTHS],
+        'ly_monthly_sales': [round(mo_ly[m]) for m in MONTHS],
+        'homebay_ty': homebay_ty,
+        'homebay_ly': homebay_ly,
+        'endcap_vs_linear': {
+            'ty': [{'month': m, 'endcap': round(ec[m]), 'linear': round(lin[m])} for m in months_with],
+            'ly': [{'month': m, 'endcap': round(ec_ly[m]), 'linear': round(lin_ly[m])} for m in months_with],
+        },
+        'tier_productivity': tier_rows,
+        'n_doors': n_doors,
+        'modeled': True,
+    }
+
+
+def _build_inv_projection(sku_list, current_week, po_total):
+    """Portfolio inventory history (back-cast) + forward WOS projection through W52."""
+    owd_now = sum(r.get('owd_units', 0) or 0 for r in sku_list)
+    seph_now = sum(r.get('seph_units', 0) or 0 for r in sku_list)
+    total_now = owd_now + seph_now
+    run = sum(r.get('board_weekly', 0) or 0 for r in sku_list)  # weekly sell-in run-rate (units)
+    if run <= 0:
+        run = max(1.0, total_now / 26.0)
+    owd_share = owd_now / total_now if total_now else 0.55
+    # History: weeks (current-12 .. current), back-cast (earlier weeks held more)
+    history = []
+    for wk in range(max(1, current_week - 12), current_week + 1):
+        back = run * (current_week - wk)
+        tot = total_now + back
+        history.append({'wk': wk, 'owd_units': round(tot * owd_share),
+                        'seph_units': round(tot * (1 - owd_share)), 'total_units': round(tot),
+                        'wos': round(tot / run, 1)})
+    # PO arrivals spread evenly over current+2 .. current+7
+    po_weeks = list(range(current_week + 2, current_week + 8))
+    po_per = (po_total / len(po_weeks)) if po_weeks else 0
+    projection = []
+    remaining = total_now
+    for wk in range(current_week + 1, 53):
+        remaining -= run
+        if wk in po_weeks:
+            remaining += po_per
+        remaining = max(0, remaining)
+        projection.append({'wk': wk, 'total_units': round(remaining),
+                           'owd_units': round(remaining * owd_share),
+                           'seph_units': round(remaining * (1 - owd_share)),
+                           'wos': round(remaining / run, 1)})
+    return {'history': history, 'projection': projection,
+            'run_rate': round(run, 1), 'po_inbound': round(po_total)}
