@@ -1054,7 +1054,7 @@ def _build_location_data(loc_df, current_year, current_week):
         chg_p = round((wk_val - wk_ly) / abs(wk_ly), 4) if wk_ly != 0 else 0
 
         loc_sales.append({
-            'loc': loc_num, 'name': info['name'],
+            'loc': loc_num, 'name': f"Store #{loc_num}",  # generalized (real store names removed)
             'terr': info['terr'], 'reg': info['reg'], 'st': info['st'],
             'city': info['city'], 'fix': info['fix'], 'vol': info['vol'],
             'wk': wk_val, 'wk_ly': wk_ly, 'wk_u': info['wk_u'],
@@ -1140,7 +1140,7 @@ def _build_inventory_data(config, skus, sku_info, srp_map,
                 com = num(r.get('Sephora COM Units', 0))
                 # If the file has no OWD/Sephora split, synthesize a believable one
                 # (OWD warehouse 55%, Sephora B&M 33%, Sephora .com 12%) so the
-                # Inventory OH tab matches the Lawless OWD vs Sephora structure.
+                # Inventory OH tab uses the OWD warehouse vs Sephora structure.
                 if (owd + bm + com) == 0 and total_oh:
                     owd = round(total_oh * 0.55)
                     bm = round(total_oh * 0.33)
@@ -1347,7 +1347,7 @@ def _build_dtc_performance(config):
 
 
 def _build_dtc(config, weekly, week_date_map, week_month_map, current_year):
-    """Build the weekly DTC structure (Lawless-style: act/ly/fcst per metric per fiscal week).
+    """Build the weekly DTC structure (act/ly/fcst per metric per fiscal week).
 
     Returns {available, weeks, current_week, l4w_weeks, week_month, metrics, channels, ...}.
     TY actuals + Paid Media + forecast targets are real (from the daily CSV); eComm Sales LY is

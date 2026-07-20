@@ -745,7 +745,7 @@ document.querySelectorAll('.period-btn').forEach(b=>b.addEventListener('click',(
   sel.onchange=function(){applyAsOfWeek(parseInt(this.value,10));};
 })();
 
-// Sephora Channel (B&M vs .com) global filter removed to match Lawless — channel stays combined.
+// Sephora Channel (B&M vs .com) global filter removed — channel stays combined.
 // (state.channel remains 'all'; B&M/.com still shown within charts that split it.)
 
 // Tab navigation
@@ -3043,33 +3043,23 @@ function buildSKUMasterPage(){
 }
 
 function buildDoorMasterPage(){
-  const FIRST=['Ava','Liam','Maya','Noah','Sofia','Ethan','Zoe','Lucas','Mia','Owen','Ivy','Leo'];
-  const LAST=['Reyes','Chen','Patel','Kim','Brooks','Nguyen','Diaz','Foster','Khan','Walsh','Romano','Bauer'];
   const SEG=['Flagship','Mall','Street','Outlet'], LOC=['Mall','Street','Outlet','Airport'];
-  const lawReg={'West':'West','Southwest':'West','Northeast':'NE','Southeast':'SE','Central':'Central','Midwest':'Central'};
+  const salesReg={'West':'West','Southwest':'West','Northeast':'NE','Southeast':'SE','Central':'Central','Midwest':'Central'};
   const pick=(arr,n)=>arr[Math.abs(n)%arr.length];
-  const slug=x=>x.toLowerCase().replace(/[^a-z]/g,'.');
-  const ph=n=>'('+(200+Math.abs(n)%700)+') 555-'+String(1000+Math.abs(n)%9000).slice(0,4);
   const rows=(DATA.loc_sales||[]).map(d=>{
-    const n=d.loc||0; const sm=pick(FIRST,n)+' '+pick(LAST,n*3), dm=pick(FIRST,n*5)+' '+pick(LAST,n*7), rm=pick(FIRST,n*11)+' '+pick(LAST,n*13);
+    const n=d.loc||0;
     return {
-      store:n, name:d.name||'', law_region:lawReg[d.terr]||d.terr||'', region:d.reg||'', district:(d.reg||'Region')+' District '+(1+n%4),
+      store:n, name:d.name||'', sales_region:salesReg[d.terr]||d.terr||'', region:d.reg||'', district:(d.reg||'Region')+' District '+(1+n%4),
       city:d.city||'', state:d.st||'', country:'USA', volume:d.vol||'', segment:pick(SEG,n), loc_type:pick(LOC,n*2),
       open_date:(2012+n%12)+'-'+String(1+n%9).padStart(2,'0')+'-'+String(10+n%18).padStart(2,'0'), mgo:'',
-      sm_name:sm, sm_email:slug(sm)+'@sephora.com', sm_phone:ph(n),
-      dm_name:dm, dm_email:slug(dm)+'@sephora.com', dm_phone:ph(n*3),
-      rm_name:rm, rm_email:slug(rm)+'@sephora.com', rm_phone:ph(n*7),
       sqft:2000+(n*37)%4000, cost_center:'CC'+String(10000+n)
     };
   });
   _refTable('page-door-master','Sephora Door Master — Directory',rows,[
-    {key:'store',label:'Store Number'},{key:'name',label:'Store Name'},{key:'law_region',label:'LAWLESS Region'},
+    {key:'store',label:'Store Number'},{key:'name',label:'Store Name'},{key:'sales_region',label:'Sales Region'},
     {key:'region',label:'Region Name'},{key:'district',label:'District Name'},{key:'city',label:'City'},{key:'state',label:'State/Province'},{key:'country',label:'Country'},
     {key:'volume',label:'Store Volume'},{key:'segment',label:'Store Segment'},{key:'loc_type',label:'Location Type'},
     {key:'open_date',label:'Open Date'},{key:'mgo',label:'Marketed Grand Opening'},
-    {key:'sm_name',label:'Store Manager Name'},{key:'sm_email',label:'Store Manager Email'},{key:'sm_phone',label:'Store Manager Phone'},
-    {key:'dm_name',label:'District Manager Name'},{key:'dm_email',label:'District Manager Email'},{key:'dm_phone',label:'District Manager Phone'},
-    {key:'rm_name',label:'Regional Manager Name'},{key:'rm_email',label:'Regional Manager Email'},{key:'rm_phone',label:'Regional Manager Phone'},
     {key:'sqft',label:'Overall Sq Ft',align:'r'},{key:'cost_center',label:'Cost Center'},
   ],{sortKey:'store',sortDir:'asc'});
 }
