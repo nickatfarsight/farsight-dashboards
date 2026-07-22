@@ -157,6 +157,7 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
         'notes_edit_url': config.get('notes_edit_url', ''),
         'notes_channels': config.get('notes_channels', []),
         'channel_split_retailer': channel_split_retailer,
+        'status_page': config.get('status_page'),   # optional "Open Items" reference tab
     }
 
     # ── 6k. Inventory data (optional) ──

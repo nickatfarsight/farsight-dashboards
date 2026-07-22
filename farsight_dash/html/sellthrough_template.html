@@ -280,6 +280,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </div>
 
 <div class="nav-tabs" id="navTabs">
+  <div class="nav-tab" data-page="status" style="color:#8A6D1A;font-weight:700;">&#9888;&#65039; Open Items</div>
   <div class="nav-tab active" data-page="overview">Overview</div>
   <div class="nav-tab" data-page="sku">SKU Performance</div>
   <div class="nav-tab" data-page="retailer">Retailer Detail</div>
@@ -296,6 +297,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </div>
 </div>
 
+<div id="page-status" class="page"></div>
 <div id="page-overview" class="page active"></div>
 <div id="page-sku" class="page"></div>
 <div id="page-retailer" class="page"></div>
@@ -327,23 +329,30 @@ document.addEventListener('DOMContentLoaded',function(){
 // =====================================================================
 const DATA = {{DATA_JSON}};
 
-// Tab visibility from config
+// Tab visibility from config — matched by data-page (robust to tab order / inserted tabs).
 (function() {
   const tabs = DATA.meta.tabs || {};
   const tabMap = {
-    'overview': 0, 'sku_performance': 1, 'retailer_detail': 2,
-    'category': 3, 'forecast': 4, 'new_launches': 5, 'doors': 6, 'dtc': 7,
-    'inv_overview': 8, 'inv_detail': 9,
-    'daash': 10, 'sku_master': 11, 'door_master': 12, 'calendar': 13
+    'overview':'overview','sku_performance':'sku','retailer_detail':'retailer','category':'category',
+    'forecast':'forecast','new_launches':'launches','doors':'doors','dtc':'dtc',
+    'inv_overview':'inv-overview','inv_detail':'inv-detail',
+    'daash':'daash','sku_master':'sku-master','door_master':'door-master','calendar':'calendar'
   };
   document.addEventListener('DOMContentLoaded', function() {
-    const navTabs = document.querySelectorAll('.nav-tab');
-    const pages = document.querySelectorAll('.page');
-    for (const [key, idx] of Object.entries(tabMap)) {
+    for (const [key, dp] of Object.entries(tabMap)) {
       if (tabs[key] === false) {
-        if (navTabs[idx]) navTabs[idx].style.display = 'none';
-        if (pages[idx]) pages[idx].style.display = 'none';
+        const nav=document.querySelector('.nav-tab[data-page="'+dp+'"]');
+        const pg=document.getElementById('page-'+dp);
+        if (nav) nav.style.display='none';
+        if (pg) pg.style.display='none';
       }
+    }
+    // "Open Items" status tab: shown only when status content is provided in config.
+    if (!DATA.meta.status_page) {
+      const n=document.querySelector('.nav-tab[data-page="status"]');
+      const p=document.getElementById('page-status');
+      if (n) n.style.display='none';
+      if (p) p.style.display='none';
     }
   });
 })();
@@ -780,6 +789,34 @@ function renderActive(){
   else if(p==='launches')renderNewLaunches();
   else if(p==='doors')renderDoors();
   else if(p==='dtc')renderDTCFromState();
+  else if(p==='status')renderStatus();
+}
+
+function renderStatus(){
+  const sp=DATA.meta.status_page, el=document.getElementById('page-status');
+  if(!sp){el.innerHTML='';return;}
+  const C={out:{bg:'#F6E4E4',bd:'#E0A0A0',fg:'#9A3B3B',lbl:'Outstanding'},
+           partial:{bg:'#FBF0D8',bd:'#E6C86B',fg:'#8A6D1A',lbl:'In progress'},
+           done:{bg:'#E4EFE4',bd:'#9AC79A',fg:'#3B7A3B',lbl:'Done'}};
+  let h='<div style="max-width:1000px;">';
+  h+='<div style="background:#FBF0D8;border:1px solid #E6C86B;border-radius:12px;padding:16px 20px;margin-bottom:24px;">'
+    +'<div style="font-size:16px;font-weight:700;color:#8A6D1A;">&#9888;&#65039; Open Items &amp; Data Gaps &mdash; Work-in-Progress draft</div>'
+    +'<div style="font-size:12px;color:#8A6D1A;margin-top:4px;">What we still need to complete or confirm. The &#9888; flags across the dashboard map to this list.'
+    +(sp.updated?' &middot; Updated '+sp.updated:'')+'</div></div>';
+  (sp.sections||[]).forEach(sec=>{
+    h+='<div style="margin-bottom:26px;"><div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text);margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:6px;">'+sec.heading+'</div>';
+    (sec.items||[]).forEach(it=>{
+      const c=C[it.state||'out']||C.out;
+      h+='<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 2px;border-bottom:1px solid #F0EBE5;">'
+        +'<span style="flex:0 0 auto;background:'+c.bg+';color:'+c.fg+';border:1px solid '+c.bd+';border-radius:6px;font-size:9px;font-weight:700;padding:3px 8px;text-transform:uppercase;white-space:nowrap;width:88px;text-align:center;">'+c.lbl+'</span>'
+        +'<div><div style="font-size:13px;font-weight:600;color:var(--text);">'+it.label+'</div>'
+        +(it.note?'<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">'+it.note+'</div>':'')
+        +(it.owner?'<div style="font-size:11px;color:var(--text-light);margin-top:3px;">Owner: '+it.owner+'</div>':'')
+        +'</div></div>';
+    });
+    h+='</div>';
+  });
+  el.innerHTML=h+'</div>';
 }
 
 // Sort helper
