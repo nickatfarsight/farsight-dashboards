@@ -1510,6 +1510,8 @@ def _apply_budget(weekly, monthly, ret_summary, skus, sku_weekly, sku_ret_weekly
 def _build_event_context(ret_summary, config, current_week):
     """One-time-distortion ('GMA-style') context for the current week: identify the retailer
     driving the largest YoY swing and show the headline vs the ex-that-retailer comparison."""
+    if not config.get('event_context', True):   # client opt-out (e.g. staggered retailer reporting)
+        return {'active': False}
     by_ret = {r['ret']: r for r in ret_summary}
     all_row = by_ret.get('All')
     if not all_row:
