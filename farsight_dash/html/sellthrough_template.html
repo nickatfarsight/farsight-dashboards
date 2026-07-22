@@ -184,6 +184,8 @@ tr.clickable{cursor:pointer;}
 .door-search{width:180px;}
 .door-search:focus{outline:none;border-color:var(--mauve);box-shadow:0 0 0 2px rgba(114,127,151,.15);}
 .door-search::placeholder{color:var(--text-light);}
+.data-flag{display:inline-block;background:#FBF0D8;color:#8A6D1A;border:1px solid #E6C86B;border-radius:6px;font-size:9px;font-weight:600;padding:1px 7px;margin-left:7px;vertical-align:middle;cursor:help;text-transform:none;letter-spacing:0;white-space:nowrap;}
+th .data-flag{font-size:8px;padding:0 5px;margin-left:4px;}
 .region-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:24px;}
 .region-tile{background:var(--bg-card);border:1px solid var(--border-light);border-radius:10px;padding:14px;text-align:center;cursor:pointer;transition:all .2s;}
 .region-tile:hover{box-shadow:var(--shadow-hover);transform:translateY(-1px);}
@@ -211,6 +213,7 @@ tr.clickable{cursor:pointer;}
     <div style="font-family:{{HEADER_FONT_FAMILY}}{{FONT_FAMILY}}sans-serif;font-size:28px;font-weight:500;letter-spacing:6px;text-transform:uppercase;color:#1A1A1A;margin-bottom:6px;">{{CLIENT_NAME}}</div>
     <div style="font-size:12px;color:#A5ABAF;letter-spacing:.5px;margin-bottom:4px;">Performance Dashboard</div>
     <div style="display:flex;align-items:center;justify-content:center;gap:4px;font-size:9px;color:#A5ABAF;letter-spacing:0.3px;font-weight:500;margin-bottom:32px;"><span style="opacity:0.7;">Built by</span> <img src="data:image/png;base64,{{FARSIGHT_LOGO_B64}}" style="height:12px;opacity:0.6;" alt="Farsight"></div>
+    {{WIP_BADGE}}
     <input id="pw-input" type="password" placeholder="Enter password" autocomplete="off"
       style="width:100%;padding:12px 16px;border:1px solid #E8DDD5;border-radius:10px;font-size:14px;font-family:{{FONT_FAMILY}}'Inter',sans-serif;text-align:center;outline:none;background:#fff;color:#1A1A1A;transition:border-color .2s;"
       onfocus="this.style.borderColor='#727F97';this.style.boxShadow='0 0 0 2px rgba(114,127,151,.15)'"
@@ -246,7 +249,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <div class="topbar">
 <div class="header">
   <div>
-    <h1 class="brand-title" style="cursor:pointer;" onclick="document.querySelector('.nav-tab[data-page=overview]').click();">{{CLIENT_NAME}}</h1>
+    <h1 class="brand-title" style="cursor:pointer;" onclick="document.querySelector('.nav-tab[data-page=overview]').click();">{{CLIENT_NAME}}{{WIP_BADGE_HEADER}}</h1>
     <div class="subtitle" style="cursor:pointer;" onclick="document.querySelector('.nav-tab[data-page=overview]').click();">Performance Dashboard</div>
   </div>
   <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;">
@@ -386,6 +389,10 @@ const fmtK=n=>{if(n==null||isNaN(n))return'-';if(Math.abs(n)>=1e6)return'$'+(n/1
 const fmtN=n=>n==null||isNaN(n)?'-':Math.round(n).toLocaleString();
 const fmtPct=n=>{if(n==null||isNaN(n))return'-';return(n>=0?'+':'')+(n*100).toFixed(1)+'%';};
 const delta=(a,b)=>(!b||b===0)?null:(a-b)/Math.abs(b);
+// Yellow "needs data" flag for sections/columns we don't have source data for yet.
+const dataFlag=msg=>'<span class="data-flag" title="'+String(msg||'').replace(/"/g,'&quot;')+'">⚠ needs data</span>';
+// Clean a string cell: blank / "nan" -> em dash.
+const cellStr=v=>{const s=(v==null?'':String(v)).trim();return (!s||s.toLowerCase()==='nan')?'—':s;};
 const hasFc=ret=>FCST_RETS.has(ret);
 
 function periodLabel(){
@@ -476,18 +483,23 @@ function recomputeRetSummary(asOfWk,ch){
       ret:ret,
       ytd:sumF(ty,r=>_tyCh(r,ch)), ytd_ly:sumF(ly,r=>_lyCh(r,ch)),
       ytd_bm:sumF(ty,r=>r.ty_bm||0), ytd_dc:sumF(ty,r=>r.ty_dc||0),
+      ytd_bm_ly:sumF(ly,r=>r.ly_bm||0), ytd_dc_ly:sumF(ly,r=>r.ly_dc||0),
       ytd_u:sumF(ty,r=>r.ty_u||0),
       mtd:sumF(tyMo,r=>_tyCh(r,ch)), mtd_ly:sumF(lyMo,r=>_lyCh(r,ch)),
+      mtd_bm:sumF(tyMo,r=>r.ty_bm||0), mtd_dc:sumF(tyMo,r=>r.ty_dc||0),
       wk:_tyCh(wkRow,ch), wk_ly:_lyCh(lyWkRow,ch),
+      wk_bm:wkRow.ty_bm||0, wk_dc:wkRow.ty_dc||0, wk_bm_ly:lyWkRow.ly_bm||0, wk_dc_ly:lyWkRow.ly_dc||0,
       l4w:sumF(tyL4,r=>_tyCh(r,ch)), l4w_ly:sumF(lyL4,r=>_lyCh(r,ch)),
       fc_u_ytd:sumF(ty,r=>r.fc_u||0), fc_d_ytd:sumF(ty,r=>_fcCh(r,ch)),
       fc_d_mtd:sumF(tyMo,r=>_fcCh(r,ch)), fc_d_wk:_fcCh(wkRow,ch), fc_d_l4w:sumF(tyL4,r=>_fcCh(r,ch)),
+      fc_d_wk_bm:wkRow.fc_d_bm||0, fc_d_ytd_bm:sumF(ty,r=>r.fc_d_bm||0),
+      fc_d_wk_dc:wkRow.fc_d_dc||0, fc_d_ytd_dc:sumF(ty,r=>r.fc_d_dc||0),
     };
   }
   // Per-retailer rows, then 'All' = sum of them (keeps All consistent with the channel filter)
   const out=(M.retailers||[]).map(rowFor);
   const allRowOut={ret:'All'};
-  const keys=['ytd','ytd_ly','ytd_bm','ytd_dc','ytd_u','mtd','mtd_ly','wk','wk_ly','l4w','l4w_ly','fc_u_ytd','fc_d_ytd','fc_d_mtd','fc_d_wk','fc_d_l4w'];
+  const keys=['ytd','ytd_ly','ytd_bm','ytd_dc','ytd_bm_ly','ytd_dc_ly','ytd_u','mtd','mtd_ly','mtd_bm','mtd_dc','wk','wk_ly','wk_bm','wk_dc','wk_bm_ly','wk_dc_ly','l4w','l4w_ly','fc_u_ytd','fc_d_ytd','fc_d_mtd','fc_d_wk','fc_d_l4w','fc_d_wk_bm','fc_d_ytd_bm','fc_d_wk_dc','fc_d_ytd_dc'];
   keys.forEach(k=>{allRowOut[k]=out.reduce((a,r)=>a+(r[k]||0),0);});
   out.push(allRowOut);
   return out;
@@ -578,7 +590,7 @@ function getRetSummary(ret){return DATA.ret_summary.find(r=>r.ret===ret)||DATA.r
 function getAggSummary(){
   // When multiple retailers selected, aggregate their summaries
   if(state.retailers[0]==='All'||state.retailers.length===1)return getRetSummary(effRet()||'All');
-  const keys=['ytd','ytd_ly','ytd_bm','ytd_dc','ytd_u','mtd','mtd_ly','wk','wk_ly','l4w','l4w_ly','fc_u_ytd','fc_d_ytd','fc_d_mtd','fc_d_wk','fc_d_l4w'];
+  const keys=['ytd','ytd_ly','ytd_bm','ytd_dc','ytd_bm_ly','ytd_dc_ly','ytd_u','mtd','mtd_ly','mtd_bm','mtd_dc','wk','wk_ly','wk_bm','wk_dc','wk_bm_ly','wk_dc_ly','l4w','l4w_ly','fc_u_ytd','fc_d_ytd','fc_d_mtd','fc_d_wk','fc_d_l4w','fc_d_wk_bm','fc_d_ytd_bm','fc_d_wk_dc','fc_d_ytd_dc'];
   const agg={ret:'Selected'};
   keys.forEach(k=>{agg[k]=0;});
   state.retailers.forEach(r=>{const rs=getRetSummary(r);if(rs)keys.forEach(k=>{agg[k]+=rs[k]||0;});});
@@ -877,7 +889,11 @@ function renderEmailTable(){
     const subStyle=isSub?'padding-left:22px;color:var(--text-muted);font-weight:400;font-size:12px;':'';
     const drill=retKey?(' class="clickable" data-drill-ret="'+String(retKey).replace(/"/g,'&quot;')+'" style="cursor:pointer;"'):'';
     let row=isTotal?'<tr class="total-row">':'<tr'+drill+'>';
-    row+='<td style="'+nameStyle+subStyle+'">'+name+'</td>';
+    let freshTag='';
+    if(retKey && !isSub && M.retailer_last_week && M.retailer_last_week[retKey] && M.retailer_last_week[retKey] < M.current_week){
+      freshTag=' <span title="Latest week this retailer has reported. Weeks after this are pending, not missing." style="font-weight:400;font-size:10px;color:var(--text-muted);white-space:nowrap;">· thru W'+M.retailer_last_week[retKey]+'</span>';
+    }
+    row+='<td style="'+nameStyle+subStyle+'">'+name+freshTag+'</td>';
     row+='<td class="r">'+fmtK(r.wk)+'</td>';
     row+='<td class="r">'+fmtK(r.mtd)+'</td>';
     row+=dolCell(r.wk,r.wk_ly,SEP_BORDER);
@@ -2257,7 +2273,7 @@ function buildDoorsPage(){
     </div>
     <div id="doorRegionGrid"></div>
     <div id="doorUSHeatmap" style="margin-bottom:24px;"></div>
-    <div class="table-container"><div class="table-title">Sales by Door Rating &mdash; Week <span id="dRatingWk"></span></div><div id="doorRatingWrap" style="overflow-x:auto;"></div></div>
+    <div class="table-container"><div class="table-title">Sales by Door Rating &mdash; Week <span id="dRatingWk"></span><span id="dRatingFlag"></span></div><div id="doorRatingWrap" style="overflow-x:auto;"></div></div>
     <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="doorVolWeeklyTitle">Weekly Sales by Door Rating</div><div style="position:relative;height:300px;"><canvas id="doorVolWeekly"></canvas></div></div></div>
     <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="doorWeeklyTitle">Weekly Sales Trend &mdash; Filtered Sephora Doors (TY vs LY)</div><div style="position:relative;height:280px;"><canvas id="doorWeekly"></canvas></div></div></div>
     <div class="table-container"><div class="table-title" style="display:flex;justify-content:space-between;align-items:center;"><span>Sephora Door Leaderboard</span><span id="doorCount" style="font-size:11px;color:var(--text-muted);font-weight:400;"></span></div><div id="doorTableWrap" style="max-height:600px;overflow-y:auto;"></div></div>
@@ -2343,10 +2359,12 @@ function renderDoorUSHeatmap(doors){
 function renderDoorRating(doors){
   const order=['A++','A+','A','B','C','D','E'];
   const byVol={};
-  doors.forEach(d=>{const v=(d.vol&&String(d.vol).trim())||'Unrated';if(!byVol[v])byVol[v]={vol:v,doors:0,wk:0,wk_ly:0};byVol[v].doors++;byVol[v].wk+=d.wk;byVol[v].wk_ly+=d.wk_ly;});
+  doors.forEach(d=>{const raw=(d.vol==null?'':String(d.vol)).trim();const v=(raw&&raw.toLowerCase()!=='nan')?raw:'Unrated';if(!byVol[v])byVol[v]={vol:v,doors:0,wk:0,wk_ly:0};byVol[v].doors++;byVol[v].wk+=d.wk;byVol[v].wk_ly+=d.wk_ly;});
   const rows=Object.values(byVol).sort((a,b)=>{const ai=order.indexOf(a.vol),bi=order.indexOf(b.vol);return (ai<0?99:ai)-(bi<0?99:bi);});
   const totWk=rows.reduce((a,r)=>a+r.wk,0)||1,totLy=rows.reduce((a,r)=>a+r.wk_ly,0)||1;
   document.getElementById('dRatingWk').textContent=M.current_week;
+  const _rf=document.getElementById('dRatingFlag');
+  if(_rf)_rf.innerHTML=(rows.length===1&&rows[0].vol==='Unrated')?dataFlag('Sephora store volume ratings (A++–E tier) not provided yet — all doors shown as Unrated.'):'';
   let h='<table><thead><tr><th>Store Rating</th><th class="r"># Doors</th><th class="r">Week $</th><th class="r">LY Week $</th><th class="r">YoY $</th><th class="r">YoY %</th><th class="r">Wk % of Total</th><th class="r">Avg $/Door</th></tr></thead><tbody>';
   rows.forEach(r=>{const yoy=r.wk-r.wk_ly;const yoyp=r.wk_ly>0?delta(r.wk,r.wk_ly):null;const cls=yoy>=0?'pos':'neg';
     h+='<tr><td><strong>'+r.vol+'</strong></td><td class="r">'+fmtN(r.doors)+'</td><td class="r">'+fmtK(r.wk)+'</td><td class="r">'+fmtK(r.wk_ly)+'</td>'
@@ -2360,13 +2378,14 @@ function renderDoorVolWeekly(doors){
   dc('doorVolWeekly');
   const order=['A++','A+','A','B','C','D','E','Unrated'];
   const colors={'A++':'#954F72','A+':'#727F97','A':'#5B9BD5','B':'#5CB85C','C':'#D4A017','D':'#A89889','E':'#888888','Unrated':'#CCCCCC'};
-  const filt=new Set(doors.map(d=>d.loc));const volByLoc={};doors.forEach(d=>{volByLoc[d.loc]=(d.vol&&String(d.vol).trim())||'Unrated';});
+  const filt=new Set(doors.map(d=>d.loc));const volByLoc={};doors.forEach(d=>{const s=(d.vol==null?'':String(d.vol)).trim();volByLoc[d.loc]=(s&&s.toLowerCase()!=='nan')?s:'Unrated';});
   const byVolWk={};const wkSet=new Set();
   (DATA.loc_weekly||[]).forEach(lw=>{if(!filt.has(Number(lw.loc)))return;const v=volByLoc[Number(lw.loc)]||'Unrated';(lw.weeks||[]).forEach(w=>{if(!byVolWk[v])byVolWk[v]={};byVolWk[v][w.wk]=(byVolWk[v][w.wk]||0)+(w.ty||0);wkSet.add(w.wk);});});
   const allWks=Array.from(wkSet).sort((a,b)=>a-b);
   const vols=Object.keys(byVolWk).sort((a,b)=>{const ai=order.indexOf(a),bi=order.indexOf(b);return (ai<0?99:ai)-(bi<0?99:bi);});
   const datasets=vols.map(v=>({label:v,data:allWks.map(w=>byVolWk[v][w]||0),borderColor:colors[v]||'#888',backgroundColor:(colors[v]||'#888')+'22',borderWidth:2,tension:.3,pointRadius:2,fill:false}));
-  document.getElementById('doorVolWeeklyTitle').innerHTML='Weekly Sales by Door Rating &mdash; '+fmtN(doors.length)+' Filtered Doors'+chartTip('Weekly sell-through ($) for filtered Sephora doors, split by volume tier (rating). Source: Sephora Location Database.');
+  const _noVol=!DATA.loc_meta||!((DATA.loc_meta.volumes||[]).length);
+  document.getElementById('doorVolWeeklyTitle').innerHTML='Weekly Sales by Door Rating &mdash; '+fmtN(doors.length)+' Filtered Doors'+(_noVol?dataFlag('Sephora store volume ratings not provided — one Unrated series until ratings are added.'):'')+chartTip('Weekly sell-through ($) for filtered Sephora doors, split by volume tier (rating). Source: Sephora Location Database.');
   if(allWks.length>0)charts['doorVolWeekly']=new Chart(document.getElementById('doorVolWeekly'),{type:'line',data:{labels:allWks.map(w=>'W'+w),datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{y:{title:{display:true,text:'Weekly Sales ($)'},ticks:{callback:v=>fmtK(v)}},x:{title:{display:true,text:'Fiscal Week'}}}}});
 }
 
@@ -2386,7 +2405,12 @@ function filteredDoors(){
 }
 
 function renderDoors(){
-  const doors=filteredDoors();
+  // Sentinel loc 999999 = the "Other" bucket (returns / non-placement doors). Keep it
+  // OUT of the door count, heatmap and leaderboard; surface it as its own KPI tile.
+  const _allDoors=filteredDoors();
+  const doors=_allDoors.filter(d=>d.loc!==999999);
+  const _other=_allDoors.filter(d=>d.loc===999999);
+  const _otherYTD=_other.reduce((a,d)=>a+d.ytd,0);
   const totalWk=doors.reduce((a,d)=>a+d.wk,0);
   const totalYTD=doors.reduce((a,d)=>a+d.ytd,0);
   const totalYTDLY=doors.reduce((a,d)=>a+d.ytd_ly,0);
@@ -2400,6 +2424,7 @@ function renderDoors(){
   kh+=kpi('YTD Sales',fmtK(totalYTD),'',{delta:deltaHtml(totalYTD,totalYTDLY,'vs LY'),tip:'Year-to-date sell-through for all filtered Sephora doors.'});
   kh+=kpi('Avg $/Door YTD',fmtK(avgPerDoor),fmtN(doors.length)+' doors',{tip:'Average YTD revenue per Sephora door. Use to identify underperforming locations.'});
   kh+=kpi('Top Door','<span style="font-size:16px;">'+(topDoor?topDoor.name.substring(0,22):'—')+'</span>',(topDoor?fmtK(topDoor.ytd)+' YTD':''),{tip:'Highest-selling Sephora door by YTD revenue in current filter.'});
+  if(_other.length)kh+=kpi('Other · returns',fmtK(_otherYTD),'Non-placement doors',{tip:'Net sell-through (mostly returns) at Sephora doors where Fara is not actively placed. Kept separate from the active-door counts above.'});
   document.getElementById('doorKpis').innerHTML=kh;
 
   // Geography heatmap tiles (Region or State) with metric toggle
@@ -2475,9 +2500,11 @@ function renderDoors(){
   // Door leaderboard table
   document.getElementById('doorCount').textContent=doors.length+' doors';
   let th='<table id="doorTable"><thead><tr>';
+  const hasCity=doors.some(d=>{const s=(d.city==null?'':String(d.city)).trim();return s&&s.toLowerCase()!=='nan';});
+  const hasVol=doors.some(d=>{const s=(d.vol==null?'':String(d.vol)).trim();return s&&s.toLowerCase()!=='nan';});
   const dCols=[
-    {l:'#',t:'num',a:'r'},{l:'Location',t:'str'},{l:'City',t:'str'},{l:'Region',t:'str'},
-    {l:'Vol',t:'str'},{l:'Fixture',t:'str'},{l:'Week $',t:'num',a:'r'},{l:'YTD $',t:'num',a:'r'},
+    {l:'#',t:'num',a:'r'},{l:'Location',t:'str'},{l:'City'+(hasCity?'':dataFlag('Store city is not in the Sephora door file')),t:'str'},{l:'Region',t:'str'},
+    {l:'Vol'+(hasVol?'':dataFlag('Store volume rating (A++–E) not provided yet')),t:'str'},{l:'Fixture',t:'str'},{l:'Week $',t:'num',a:'r'},{l:'YTD $',t:'num',a:'r'},
     {l:'YTD Avg/Wk',t:'num',a:'r'},{l:'L5W Avg',t:'num',a:'r'},{l:'Chg vs Avg',t:'num',a:'r'},
     {l:'Chg %',t:'num',a:'r'},{l:'vs LY %',t:'num',a:'r'},
   ];
@@ -2490,8 +2517,8 @@ function renderDoors(){
     th+='<tr class="clickable" onclick="showDoorDetail('+d.loc+')">';
     th+='<td class="r" data-v="'+(i+1)+'">'+(i+1)+'</td>';
     th+='<td data-v="'+d.name+'"><strong>'+d.name.substring(0,28)+'</strong></td>';
-    th+='<td>'+d.city+'</td><td>'+d.reg+'</td>';
-    th+='<td>'+d.vol+'</td><td>'+(d.fix.length>15?d.fix.substring(0,15)+'…':d.fix)+'</td>';
+    th+='<td>'+cellStr(d.city)+'</td><td>'+cellStr(d.reg)+'</td>';
+    th+='<td>'+cellStr(d.vol)+'</td><td>'+cellStr(d.fix.length>15?d.fix.substring(0,15)+'…':d.fix)+'</td>';
     th+='<td class="r" data-v="'+d.wk+'">'+fmt(d.wk)+'</td>';
     th+='<td class="r" data-v="'+d.ytd+'">'+fmtK(d.ytd)+'</td>';
     th+='<td class="r" data-v="'+d.ytd_avg+'">'+fmt(d.ytd_avg)+'</td>';
@@ -2642,12 +2669,12 @@ function renderDTCFromState(){
   renderDTCComposite();
 }
 
-function tile(label,fmt,o,higherBetter,sample,tip){
+function tile(label,fmt,o,higherBetter,sample,tip,flag){
   const clickable=DTC_TREND[label]?` onclick="openDtcTrend('${label}')" style="cursor:pointer"`:'';
   const arrow=DTC_TREND[label]?' <span style="color:var(--accent,#954F72)">&#8599;</span>':'';
   const pill=sample?' <span style="font-size:8px;background:rgba(212,160,23,.15);color:#a8631e;padding:1px 5px;border-radius:6px;">SAMPLE</span>':'';
   const tipH=tip?`<span class="tip">${tip}</span>`:'';
-  return `<div class="kpi-card has-tooltip"${clickable}><div class="kpi-label">${dtcDisp(label)}${arrow}${pill}</div><div class="kpi-value">${_dtcFmt(fmt,o.a)}</div>${dtcDelta(o.a,o.c,higherBetter)}${tipH}</div>`;
+  return `<div class="kpi-card has-tooltip"${clickable}><div class="kpi-label">${dtcDisp(label)}${arrow}${pill}${flag||''}</div><div class="kpi-value">${_dtcFmt(fmt,o.a)}</div>${dtcDelta(o.a,o.c,higherBetter)}${tipH}</div>`;
 }
 
 function renderDTCKPIs(){
@@ -2662,9 +2689,11 @@ function renderDTCKPIs(){
   h+=tile('New Customers','n',B('New Customers'),true,false,'First-time shoppers.');
   h+=tile('AUR','$2',der(DTC_TREND['AUR']),true,false,'Average unit retail (Sales &divide; Units).');
   h+=tile('UPT','x',der(DTC_TREND['UPT']),true,false,'Units per transaction.');
-  h+=tile('Paid Media Spend','$',B('Paid Media Spend'),false,false,'Meta + Google + TikTok spend.');
-  h+=tile('MER (bROAS)','x',der(DTC_TREND['MER (bROAS)']),true,false,'Blended ROAS (Sales &divide; Spend).');
-  h+=tile('bCAC','$2',der(DTC_TREND['bCAC']),false,false,'Blended CAC (Spend &divide; New Customers).');
+  const _pm=B('Paid Media Spend');
+  const _spendFlag=(!_pm||!_pm.a)?dataFlag('Enter weekly Paid Media Spend in "Fara DTC Manual Input.xlsx" to unlock this — Shopify has no ad-spend data.'):'';
+  h+=tile('Paid Media Spend','$',_pm,false,false,'Meta + Google + TikTok spend (from the manual input sheet).',_spendFlag);
+  h+=tile('MER (bROAS)','x',der(DTC_TREND['MER (bROAS)']),true,false,'Blended ROAS (Sales &divide; Spend).',_spendFlag);
+  h+=tile('bCAC','$2',der(DTC_TREND['bCAC']),false,false,'Blended CAC (Spend &divide; New Customers).',_spendFlag);
   h+=tile('% New','pct',der(DTC_TREND['% New']),true,false,'% of orders from new customers.');
   document.getElementById('dtcKpis').innerHTML=h;
   const sn=document.getElementById('dtcSampleNote');

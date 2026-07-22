@@ -114,7 +114,8 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
     sephora_productivity = {}
     if loc_df is not None and config['tabs'].get('doors', False):
         print("  Building location/door data...")
-        loc_sales, loc_weekly_data, loc_meta = _build_location_data(loc_df, current_year, current_week)
+        loc_sales, loc_weekly_data, loc_meta = _build_location_data(
+            loc_df, current_year, current_week, show_names=config.get('show_door_names', False))
         sephora_productivity = _build_sephora_productivity(loc_sales, loc_weekly_data, current_week, week_month_map, current_year)
 
     # ── Event (one-time-distortion) context callout for the current week ──
@@ -126,7 +127,17 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
     from datetime import datetime
     build_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
 
+    # Per-retailer latest reported week this year (freshness — retailers report on
+    # different lags, so a retailer behind current_week is not "missing", just not in yet).
+    retailer_last_week = {}
+    _cy_df = sales_df[sales_df['Year'] == current_year]
+    for _ret in retailers:
+        _rw = _cy_df.loc[_cy_df['Retailer'] == _ret, 'Week']
+        if len(_rw):
+            retailer_last_week[_ret] = int(_rw.max())
+
     data_meta = {
+        'retailer_last_week': retailer_last_week,
         'current_year': current_year,
         'current_week': current_week,
         'current_month': current_month_445,
@@ -997,7 +1008,7 @@ def _build_new_launches(sales_df, skus, forecast_data, fc2d, current_year):
 # ─────────────────────────────────────────────────────────────
 # 6i-j. Location / door data
 # ─────────────────────────────────────────────────────────────
-def _build_location_data(loc_df, current_year, current_week):
+def _build_location_data(loc_df, current_year, current_week, show_names=False):
     loc_cy = loc_df[loc_df['Year'] == current_year].copy()
     if loc_cy.empty:
         return [], [], {'territories': [], 'regions': [], 'states': [], 'fixtures': [], 'volumes': [], 'loc_current_week': current_week}
@@ -1054,7 +1065,8 @@ def _build_location_data(loc_df, current_year, current_week):
         chg_p = round((wk_val - wk_ly) / abs(wk_ly), 4) if wk_ly != 0 else 0
 
         loc_sales.append({
-            'loc': loc_num, 'name': f"Store #{loc_num}",  # generalized (real store names removed)
+            # Real store name when the client opts in (show_door_names); otherwise generalized.
+            'loc': loc_num, 'name': (info['name'] if (show_names and info['name'] and info['name'] != 'nan') else f"Store #{loc_num}"),
             'terr': info['terr'], 'reg': info['reg'], 'st': info['st'],
             'city': info['city'], 'fix': info['fix'], 'vol': info['vol'],
             'wk': wk_val, 'wk_ly': wk_ly, 'wk_u': info['wk_u'],

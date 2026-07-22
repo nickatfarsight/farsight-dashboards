@@ -42,6 +42,19 @@ def build_html(config, data, output_dir, shared_dir):
     html = html.replace('{{PRIMARY_COLOR}}', primary_color)
     html = html.replace('{{DASHBOARD_URL}}', dashboard_url)
 
+    # Optional "Work in Progress" draft badge (config: wip: true) — client-specific.
+    wip = config.get('wip', False)
+    wip_gate = ('<div style="display:inline-block;background:#FBE5A0;color:#7A5C00;border:1px solid #E6C200;'
+                'border-radius:8px;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 14px;'
+                'margin-bottom:20px;text-transform:uppercase;">&#9888;&#65039; Work in Progress &middot; Draft</div>'
+                ) if wip else ''
+    wip_header = ('<span style="display:inline-block;background:#FBE5A0;color:#7A5C00;border:1px solid #E6C200;'
+                  'border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.8px;padding:2px 9px;'
+                  'margin-left:14px;vertical-align:middle;text-transform:uppercase;">&#9888;&#65039; WIP &middot; Draft</span>'
+                  ) if wip else ''
+    html = html.replace('{{WIP_BADGE}}', wip_gate)
+    html = html.replace('{{WIP_BADGE_HEADER}}', wip_header)
+
     # Inject DATA JSON
     html = html.replace('{{DATA_JSON}}', data_json)
 
