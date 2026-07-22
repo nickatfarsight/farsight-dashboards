@@ -29,6 +29,58 @@ def _week_to_445_month(wk):
     return ''
 
 
+def _build_coverage_grid(sales_df, current_year, current_week, monthly_retailers, retailers):
+    """Per-retailer weekly sales coverage for the 'Open Items' tab (mirrors the team
+    coverage workbook). Everyone sits on one W1-52 axis; monthly retailers show their
+    445-month status across that month's weeks. Cell status: have / gap (missing within
+    reported range) / behind (recent, not reported yet) / na (pre-launch or future)."""
+    ly = current_year - 1
+    months = [m for m, _, _ in _445_RANGES]
+    cur_mo_idx = months.index(_week_to_445_month(current_week)) if _week_to_445_month(current_week) in months else 11
+    out = []
+    for ret in retailers:
+        monthly = ret in (monthly_retailers or [])
+        year_rows = []
+        for yr in (ly, current_year):
+            present = set(int(w) for w in sales_df[(sales_df['Retailer'] == ret) & (sales_df['Year'] == yr)]['Week'].unique())
+            cells = ['na'] * 52
+            if monthly:
+                pm = {_week_to_445_month(w) for w in present}
+                pm_idx = sorted(months.index(m) for m in pm) if pm else []
+                for mi, (mo, a, b) in enumerate(_445_RANGES):
+                    b = min(b, 52)
+                    if mo in pm:
+                        st = 'have'
+                    elif not pm_idx or mi < pm_idx[0]:
+                        st = 'na'
+                    elif yr == current_year and mi > cur_mo_idx:
+                        st = 'na'
+                    elif mi <= (cur_mo_idx if yr == current_year else pm_idx[-1]):
+                        st = 'gap'
+                    else:
+                        st = 'na'
+                    for w in range(a, b + 1):
+                        cells[w - 1] = st
+            else:
+                lo, hi = (min(present), max(present)) if present else (None, None)
+                for w in range(1, 53):
+                    if w in present:
+                        st = 'have'
+                    elif lo is None or w < lo:
+                        st = 'na'
+                    elif w <= hi:
+                        st = 'gap'
+                    elif yr == current_year and w <= current_week:
+                        st = 'behind'
+                    else:
+                        st = 'na'
+                    cells[w - 1] = st
+            year_rows.append({'year': yr, 'cells': cells})
+        out.append({'retailer': ret, 'cadence': 'monthly' if monthly else 'weekly', 'years': year_rows})
+    return {'retailers': out, 'months': [[m, a, min(b, 52)] for m, a, b in _445_RANGES],
+            'current_week': current_week}
+
+
 def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
               forecast_data_bm, forecast_data_dc, srp_map,
               loc_df, week_date_map, week_month_map, meta,
@@ -158,6 +210,9 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
         'notes_channels': config.get('notes_channels', []),
         'channel_split_retailer': channel_split_retailer,
         'status_page': config.get('status_page'),   # optional "Open Items" reference tab
+        'coverage_grid': (_build_coverage_grid(sales_df, current_year, current_week,
+                                               config.get('coverage_monthly', []), retailers)
+                          if config.get('status_page') else None),
     }
 
     # ── 6k. Inventory data (optional) ──

@@ -816,7 +816,33 @@ function renderStatus(){
     });
     h+='</div>';
   });
-  el.innerHTML=h+'</div>';
+  el.innerHTML=h+renderCoverageGrid(DATA.meta.coverage_grid)+'</div>';
+}
+
+function renderCoverageGrid(cg){
+  if(!cg||!cg.retailers||!cg.retailers.length)return '';
+  const col={have:'#63BE7B',gap:'#F4A6A6',behind:'#FFE08A',na:'#EFECE8'}, CW=13, LBL=150;
+  let h='<div style="margin-top:8px;"><div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;border-bottom:1px solid var(--border);padding-bottom:6px;">Sales Coverage by Week</div>';
+  h+='<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Fiscal weeks W1–52. Monthly retailers (Violet Grey, Goop) shown as month blocks. Current week = W'+cg.current_week+'.</div>';
+  h+='<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;display:flex;gap:16px;flex-wrap:wrap;">';
+  [['have','We have it'],['gap','Missing — please send'],['behind','Not reported yet'],['na','Before launch / future']].forEach(function(x){
+    h+='<span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;border-radius:2px;background:'+col[x[0]]+';display:inline-block;"></span>'+x[1]+'</span>';});
+  h+='</div>';
+  h+='<div style="overflow-x:auto;padding-bottom:8px;"><div style="min-width:'+(LBL+52*CW)+'px;">';
+  // month-label header
+  h+='<div style="display:flex;margin-bottom:3px;"><div style="flex:0 0 '+LBL+'px;"></div>';
+  cg.months.forEach(function(m){var wc=m[2]-m[1]+1;h+='<div style="flex:0 0 '+(wc*CW)+'px;font-size:9px;color:var(--text-muted);text-align:center;border-left:1px solid var(--border);">'+m[0]+'</div>';});
+  h+='</div>';
+  cg.retailers.forEach(function(r){
+    r.years.forEach(function(yrow,i){
+      h+='<div style="display:flex;align-items:center;margin-bottom:1px;">';
+      h+='<div style="flex:0 0 '+LBL+'px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'+(i===0?'font-weight:600;color:var(--text);':'color:var(--text-muted);')+'">'+(i===0?r.retailer+' ':'')+'<span style="font-weight:400;color:var(--text-light);">'+yrow.year+(i===0&&r.cadence==='monthly'?' · mo':'')+'</span></div>';
+      yrow.cells.forEach(function(st,j){h+='<div title="'+r.retailer+' '+yrow.year+' · W'+(j+1)+'" style="flex:0 0 '+CW+'px;height:13px;background:'+col[st]+';border-right:1px solid #fff;"></div>';});
+      h+='</div>';
+    });
+  });
+  h+='</div></div></div>';
+  return h;
 }
 
 // Sort helper
