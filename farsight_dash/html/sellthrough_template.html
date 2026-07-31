@@ -404,6 +404,38 @@ const dataFlag=msg=>'<span class="data-flag" title="'+String(msg||'').replace(/"
 const cellStr=v=>{const s=(v==null?'':String(v)).trim();return (!s||s.toLowerCase()==='nan')?'—':s;};
 const hasFc=ret=>FCST_RETS.has(ret);
 
+// Retailers in the current selection that have NOT reported through the week being
+// viewed. Their rows/cells read as 0 because no data has arrived — not because sales
+// were zero. Returns [{ret, last}] sorted by how far behind they are.
+function staleRets(){
+  const lw=M.retailer_last_week; if(!lw)return[];
+  const sel=(state.retailers[0]==='All')?(M.retailers||[]):state.retailers;
+  const monthly=new Set(M.monthly_retailers||[]);
+  return sel.filter(r=>lw[r]&&lw[r]<M.current_week)
+            .map(r=>({ret:r,last:lw[r],monthly:monthly.has(r)}))
+            .sort((a,b)=>a.last-b.last);
+}
+// Inline warning banner naming those retailers, so a 0 is never mistaken for a real zero.
+// Monthly reporters are listed but excluded from the headline week range — they are always
+// weeks behind by design, and folding them in would overstate how stale the view is.
+function staleNote(){
+  const s=staleRets(); if(!s.length)return'';
+  const parts=s.map(x=>x.ret+(x.monthly?' (monthly — thru W'+x.last+')':' (thru W'+x.last+')')).join(', ');
+  const wk=s.filter(x=>!x.monthly).map(x=>x.last);
+  let head;
+  if(wk.length){
+    const gap=Math.min.apply(null,wk)+1;
+    head='⚠ Not all retailers have reported '+(gap===M.current_week?'W'+gap:'W'+gap+'–W'+M.current_week)+' yet:';
+  } else {
+    head='⚠ Reporting behind the current week:';
+  }
+  return '<div style="background:#FBF0D8;border:1px solid #E6C86B;border-radius:8px;padding:9px 13px;'+
+         'margin-bottom:14px;font-size:11.5px;color:#6B5410;line-height:1.5;">'+
+         '<strong>'+head+'</strong> '+parts+'. '+
+         'A blank or $0 for these retailers in this view means <em>not yet reported</em> — not zero sales.'+
+         '</div>';
+}
+
 function periodLabel(){
   const p=state.period;
   if(p==='wk')return'Latest Week (W'+M.current_week+')';
@@ -561,6 +593,13 @@ function buildRetailerMultiSelect(){
 function toggleRetPop(e){
   e&&e.stopPropagation();
   document.getElementById('msRetPop').classList.toggle('open');
+}
+// The per-tab "Showing: …" label is a read-out of the GLOBAL retailer filter, not its own
+// control — clients reasonably try to click it. Send them to the real control in the header.
+function openRetFilter(){
+  window.scrollTo({top:0,behavior:'smooth'});
+  const pop=document.getElementById('msRetPop');
+  if(pop&&!pop.classList.contains('open'))pop.classList.add('open');
 }
 function toggleRetAll(cb){
   const boxes=document.querySelectorAll('#msRetPop input[type="checkbox"]:not([value="All"])');
@@ -1459,6 +1498,7 @@ function buildSKUPage(){
       <div><label>New / Core</label><br><select id="fNVC"><option value="All">All</option><option value="New">New</option><option value="Core">Core</option></select></div>
       <div><label>Search</label><br><input class="search-box" id="skuSearch" placeholder="Search SKU..."></div>
     </div>
+    <div id="skuStaleNote"></div>
     <div class="kpi-grid" id="skuKpis"></div>
     <div class="chart-row">
       <div class="chart-container"><div class="chart-title" id="skuTop20Title">Top 20 SKUs &mdash; ${periodLabel()} <span class="chart-hint">(click bar for detail)</span></div><canvas id="skuTop20"></canvas></div>
@@ -1562,6 +1602,7 @@ function renderSKU(){
   kh+=kpi('Avg $ / SKU (YTD)',activeSKUs>0?fmtK(totalYTD/activeSKUs):'-',fmtN(activeSKUs)+' active',{click:"drillKpi('ytd')",tip:'Average YTD revenue per active SKU. Higher = more productive assortment.'});
   kh+=kpi('Forecast Accuracy',fcAcc,fmtK(totalYTD)+' actual / '+fmtK(totalFcst)+' plan',{click:"drillKpi('fc_d_ytd')",tip:'YTD actual sell-through as % of demand plan forecast (units × SRP). 100% = exactly on plan.'});
   document.getElementById('skuKpis').innerHTML=kh;
+  {const _sn=document.getElementById('skuStaleNote'); if(_sn)_sn.innerHTML=staleNote();}
 
   // Update chart titles with tooltips
   document.getElementById('skuTop20Title').innerHTML='Top 20 SKUs &mdash; '+periodLabel()+' &mdash; '+channelLabel()+' <span class="chart-hint">(click bar for detail)</span>'+chartTip('Top 20 selling SKUs ranked by sell-through ($) for the selected period across '+channelLabel()+'. Source: Sales Database + Shopify eCommerce.');
@@ -1667,7 +1708,8 @@ function showSKUDetail(ic){
 // =====================================================================
 function buildRetailerPage(){
   document.getElementById('page-retailer').innerHTML=`
-    <div class="scope-label" id="retScopeLabel">Showing: All Retailers</div>
+    <div class="scope-label" id="retScopeLabel" onclick="openRetFilter()" title="Click to change the retailer selection" style="cursor:pointer;">Showing: All Retailers</div>
+    <div id="retStaleNote"></div>
     <div class="kpi-grid" id="retKpis"></div>
     <div class="chart-row full"><div class="chart-container" style="position:relative;"><div class="chart-title" id="retWeeklyTitle">Weekly Trend <span class="chart-hint">(click point for detail)</span></div><div style="position:relative;height:300px;"><canvas id="retWeekly"></canvas></div></div></div>
     <div class="chart-row">
@@ -1684,7 +1726,8 @@ function renderRetailer(){
   const firstRet=rets[0]||'Sephora';
   const rs=isCompare?getRetSummary(firstRet):getAggSummary();
 
-  document.getElementById('retScopeLabel').textContent='Showing: '+(state.retailers[0]==='All'?'All Retailers':state.retailers.join(', '));
+  document.getElementById('retScopeLabel').innerHTML='Showing: '+(state.retailers[0]==='All'?'All Retailers':state.retailers.join(', '))+' <span style="opacity:.65;">&middot; click to change</span>';
+  {const _rn=document.getElementById('retStaleNote'); if(_rn)_rn.innerHTML=staleNote();}
 
   // KPIs
   let kh='';

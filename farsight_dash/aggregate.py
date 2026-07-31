@@ -209,6 +209,9 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
         'notes_edit_url': config.get('notes_edit_url', ''),
         'notes_channels': config.get('notes_channels', []),
         'channel_split_retailer': channel_split_retailer,
+        # Retailers that report monthly, not weekly. They are ALWAYS several weeks behind the
+        # current fiscal week by design, so freshness warnings must not read them as "late".
+        'monthly_retailers': config.get('coverage_monthly', []),
         'status_page': config.get('status_page'),   # optional "Open Items" reference tab
         'coverage_grid': (_build_coverage_grid(sales_df, current_year, current_week,
                                                config.get('coverage_monthly', []), retailers)
