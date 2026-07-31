@@ -104,12 +104,17 @@ def build_html(config, data, output_dir, shared_dir):
                 farsight_logo_b64 = base64.b64encode(bf.read()).decode()
     html = html.replace('{{FARSIGHT_LOGO_B64}}', farsight_logo_b64 or '')
 
-    # Client logo
-    client_logo_b64 = load_logo_b64(shared_dir, config['branding'].get('logo_file'))
-    if client_logo_b64:
-        html = html.replace('{{CLIENT_LOGO_B64}}', client_logo_b64)
-    else:
-        html = html.replace('{{CLIENT_LOGO_B64}}', '')
+    # Client logo in the header, replacing the client name set in type. OPT-IN via
+    # branding.logo_in_header — several configs already set logo_file for other purposes
+    # (the public DEMO points at "Farsight Logo.png"), and turning this on by default would
+    # silently restyle their headers on the next rebuild.
+    client_logo_b64 = ''
+    if config['branding'].get('logo_in_header'):
+        client_logo_b64 = load_logo_b64(shared_dir, config['branding'].get('logo_file'))
+        if not client_logo_b64:
+            print("  ⚠ logo_in_header is set but branding.logo_file was not found in "
+                  "shared_data/Branding — falling back to the text title.")
+    html = html.replace('{{CLIENT_LOGO_B64}}', client_logo_b64)
 
     # Write output
     output_path = os.path.join(output_dir, 'index.html')

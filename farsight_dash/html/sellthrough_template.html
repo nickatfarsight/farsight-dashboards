@@ -249,7 +249,18 @@ document.addEventListener('DOMContentLoaded',function(){
 <div class="topbar">
 <div class="header">
   <div>
-    <h1 class="brand-title" style="cursor:pointer;" onclick="document.querySelector('.nav-tab[data-page=overview]').click();">{{CLIENT_NAME}}{{WIP_BADGE_HEADER}}</h1>
+    <h1 class="brand-title" style="cursor:pointer;" onclick="document.querySelector('.nav-tab[data-page=overview]').click();" id="brandTitle">{{CLIENT_NAME}}{{WIP_BADGE_HEADER}}</h1>
+    <!-- If the client supplied a logo (branding.logo_file), show the real wordmark instead of
+         the client name set in type. Falls back silently to the text title above when no logo
+         is configured or the file isn't found, so clients without one are unaffected. -->
+    <script>(function(){var b64="{{CLIENT_LOGO_B64}}";if(!b64)return;
+      var h=document.getElementById('brandTitle');if(!h)return;
+      // Keep any element children (the WIP badge is an unclassed inline span) and re-attach
+      // them after the swap, otherwise replacing innerHTML silently deletes the badge.
+      var kept=Array.prototype.slice.call(h.children);
+      h.innerHTML='<img src="data:image/png;base64,'+b64+'" alt="{{CLIENT_NAME}}" '+
+        'style="height:26px;width:auto;max-width:min(320px,60vw);display:inline-block;vertical-align:middle;">';
+      kept.forEach(function(el){h.appendChild(el);});})();</script>
     <div class="subtitle" style="cursor:pointer;" onclick="document.querySelector('.nav-tab[data-page=overview]').click();">Performance Dashboard</div>
   </div>
   <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;">
