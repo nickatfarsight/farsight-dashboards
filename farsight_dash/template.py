@@ -368,6 +368,76 @@ def _theme_css(theme):
             'th{background:var(--bg-card);}'
             '@media(max-width:1000px){.page{margin:0 0 32px;border-left:none;border-right:none;}}')
 
+    if g('site_mirror'):
+        # Everything below is measured off farahomidi.com at 1440px, element by element, so
+        # the dashboard shares the site's actual anatomy rather than a resemblance:
+        #   · header: nav LEFT at the 50px page margin, wordmark RIGHT, the whole thing
+        #     mix-blend-mode:difference over the ground (white ink → warm brown on the blue)
+        #   · page margin: exactly 50px both sides (their shop grid: items at x=50, gutters 8)
+        #   · buttons: 1px ink hairline, transparent, sentence case, 0 radius
+        #   · interactions: color transitions .15s ease-in; selected/hover states tinted with
+        #     the ground colour rather than grey
+        ground = g('header_bg') or '#A3E5F7'
+        tint = _rgba(ground, .16) or 'rgba(163,229,247,.16)'
+        tint_soft = _rgba(ground, .1) or 'rgba(163,229,247,.1)'
+        ink_hair = 'rgba(18,18,18,.4)'
+        parts.append(
+            # ── Header mirrored: controls where the site's nav sits, wordmark on the right.
+            '@media(min-width:1001px){'
+            '.header{flex-direction:row-reverse;justify-content:space-between;'
+            'max-width:none;margin:0;padding:26px 50px 18px;}'
+            '.header>div:first-child{text-align:right;}'
+            '}'
+            # The site's signature: white ink differenced over the ground. The logo PNG is
+            # black-on-transparent, so invert() gives the white ink and the blend does the
+            # rest — identical mechanism, and deterministic here because the ground is a
+            # fixed hex. Applied to the image only, so the WIP badge (a sibling span inside
+            # the h1) keeps its own colours.
+            '#brandTitle img{filter:invert(1);mix-blend-mode:difference;height:32px !important;}'
+            '.header .subtitle{font-size:12.5px;color:rgba(18,18,18,.55);}'
+            # ── Nav as the site sets nav: text at the page margin, no boxes, breathing room.
+            '.nav-tabs{max-width:none;margin:0;padding:0 50px;gap:0;}'
+            # 26px gap: the largest that fits all 15 tabs inside 1440 − 2×50 margins.
+            '.nav-tab{padding:13px 0;margin-right:26px;font-size:12px;'
+            'transition:color .15s ease-in;}'
+            '.nav-tab:hover{border-bottom-color:' + ink_hair + ';}'
+            '.nav-tab.active{border-bottom-width:2px;}'
+            # ── Sheet at the site's 50px page margins, full width between them.
+            '@media(min-width:1001px){.page{max-width:none;margin:0 50px 64px;}}'
+            # ── Header furniture as site furniture: hairline ink on the ground, no fills.
+            f'.global-filters select,.ms-btn{{background:transparent;border:1px solid {ink_hair};'
+            'color:var(--text);}'
+            f'.period-toggle{{border:1px solid {ink_hair};}}'
+            f'.period-btn{{background:transparent;color:rgba(18,18,18,.55);'
+            f'border-right:1px solid {ink_hair};transition:color .15s ease-in;}}'
+            '.period-btn:hover{background:rgba(255,255,255,.45);color:var(--text);}'
+            '.period-btn.active{background:var(--bg-card);color:var(--text);}'
+            '.date-badge{background:transparent;border:none;padding:0;max-width:none;'
+            'font-size:12.5px;color:rgba(18,18,18,.7);font-weight:400;line-height:1.4;}'
+            # ── The ground colour lives in the interactions, the way the brand would use it:
+            # row hover, menu hover, text selection.
+            f'tr:hover td{{background:{tint_soft};}}'
+            f'.ms-pop label:hover{{background:{tint_soft};}}'
+            f'::selection{{background:{ground};}}'
+            f'.region-tile.active-filter{{border-top-color:var(--text) !important;'
+            f'background:{tint_soft};box-shadow:none;}}'
+            # ── Buttons on the sheet: the site's 1px-ink hairline button, not a filled slab.
+            # The Recap button is inline-styled with the accent fill, so it's reached by its
+            # onclick attribute.
+            '[onclick="downloadRecap()"]{background:transparent !important;'
+            'color:var(--text) !important;border:1px solid var(--text) !important;'
+            'font-weight:400 !important;transition:all .15s ease-in;}'
+            '[onclick="downloadRecap()"]:hover{background:var(--text) !important;'
+            'color:#fff !important;}'
+            '.csv-dl-btn{transition:all .15s ease-in;}'
+            f'.csv-dl-btn:hover{{background:{tint} !important;}}'
+            # ── Editorial numerals: the figure is the headline, set large and light the way
+            # an editorial page would, with the weight in the datum not the chrome.
+            '.kpi-value{font-size:34px;font-weight:400;letter-spacing:0;}'
+            '.rt-value{font-size:20px;font-weight:400;}'
+            '.chart-title,.table-title{font-size:16px;}'
+            '.kpi-label{margin-bottom:12px;}')
+
     return '\n'.join(parts)
 
 
