@@ -29,6 +29,31 @@ def _week_to_445_month(wk):
     return ''
 
 
+def _detect_split_retailers(sales_df):
+    """Retailers whose rows carry a non-trivial in-store vs online split.
+
+    A retailer qualifies when its B&M and .com columns are both populated and together
+    reconcile to its total — i.e. the split is real reported data, not an artefact of one
+    column being left at zero. Returns a plain list for JSON.
+    """
+    out = []
+    if sales_df is None or sales_df.empty:
+        return out
+    for col in ('TY B&M Sales $', 'TY Dotcom Sales $', 'TY Total Sales $', 'Retailer'):
+        if col not in sales_df.columns:
+            return out
+    for ret, g in sales_df.groupby('Retailer'):
+        bm = g['TY B&M Sales $'].fillna(0).sum()
+        dc = g['TY Dotcom Sales $'].fillna(0).sum()
+        tot = g['TY Total Sales $'].fillna(0).sum()
+        if tot <= 0 or (bm == 0 and dc == 0):
+            continue
+        # allow a little rounding drift, but the parts must actually make up the whole
+        if abs((bm + dc) - tot) <= max(1.0, abs(tot) * 0.005):
+            out.append(str(ret))
+    return sorted(out)
+
+
 def _build_coverage_grid(sales_df, current_year, current_week, monthly_retailers, retailers):
     """Per-retailer weekly sales coverage for the 'Open Items' tab (mirrors the team
     coverage workbook). Everyone sits on one W1-52 axis; monthly retailers show their
@@ -203,12 +228,22 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
         'data_through_label': f"Data through Week {current_week} (ending {current_week_end.strftime('%m.%d.%Y')})",
         'forecast_retailers': forecast_retailers,
         'all_weeks': all_weeks_current,
+        'week_greg': _build_week_calendar(week_date_map, current_year),
+        # week -> 4-4-5 month name for the CURRENT year, so the UI can roll weeks up to fiscal
+        # months client-side. Both maps are keyed by (year, week); the UI only charts one year.
+        'week_month_map': {int(k[1]): str(v) for k, v in (week_month_map or {}).items()
+                           if isinstance(k, (tuple, list)) and int(k[0]) == current_year},
         'client_name': config['client_name'],
         'tabs': config.get('tabs', {}),
         'notes_csv_url': config.get('notes_csv_url', ''),
         'notes_edit_url': config.get('notes_edit_url', ''),
         'notes_channels': config.get('notes_channels', []),
         'channel_split_retailer': channel_split_retailer,
+        # Every retailer that actually reports an in-store vs online split, detected from the
+        # data rather than named in config: as feeds are added (Fara gained MECCA and
+        # Selfridges alongside Sephora in 2026-08) the channel filter should pick them up
+        # without a config edit. The single-value key above is kept for older configs.
+        'channel_split_retailers': _detect_split_retailers(sales_df),
         # Retailers that report monthly, not weekly. They are ALWAYS several weeks behind the
         # current fiscal week by design, so freshness warnings must not read them as "late".
         'monthly_retailers': config.get('coverage_monthly', []),
@@ -257,9 +292,103 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
         'event_context': event_context,
         'annotations': config.get('_annotations', []),
         'daash': _build_daash(config.get('_daash', []), config),
+        'returns': _build_returns(config.get('_returns') or {}, sku_info, current_year),
     }
 
     return DATA
+
+
+def _build_returns(feed, sku_info, current_year):
+    """Shape the returns / testers & damages feed for the Returns tab.
+
+    Deliberately does NOT recompute the % -of-gross ratios: those come from each retailer's own
+    monthly report (net + damages + testers), so the dashboard shows the same number the
+    retailer published rather than a near-miss of it.
+
+    -> {sku: [...], monthly: [...], kpis: {...}, has_weekly: bool, allocated_note: bool}
+    """
+    rows = feed.get('rows') or []
+    monthly = feed.get('monthly') or []
+    if not rows and not monthly:
+        return {}
+
+    def _blank():
+        return {'dam_u': 0.0, 'dam_d': 0.0, 'tes_u': 0.0, 'tes_d': 0.0, 'oth_d': 0.0}
+
+    by_sku, by_ret = {}, {}
+    for r in rows:
+        yr = r.get('yr')
+        key = (r.get('ic'), r.get('prod') or '')
+        for bucket, k in ((by_sku, key), (by_ret, (r.get('ret'), yr))):
+            slot = bucket.setdefault(k, _blank())
+            kind = (r.get('kind') or '').lower()
+            if kind == 'damages':
+                slot['dam_u'] += r.get('u') or 0
+                slot['dam_d'] += r.get('d') or 0
+            elif kind == 'testers':
+                slot['tes_u'] += r.get('u') or 0
+                slot['tes_d'] += r.get('d') or 0
+            else:
+                slot['oth_d'] += r.get('d') or 0
+        slot = by_sku[key]
+        slot['ret'] = r.get('ret')
+        slot['yr'] = yr
+
+    sku_out = []
+    for (ic, prod), v in by_sku.items():
+        info = sku_info.get(ic) if ic is not None else None
+        sku_out.append({
+            'ic': ic,
+            'desc': ((info or {}).get('product')
+                     or (prod if prod and prod.lower() != 'nan' else '')
+                     or (f"SKU {ic}" if ic else 'Unmatched SKUs (no style code in the report)')),
+            'cat': (info or {}).get('category', ''), 'coll': (info or {}).get('franchise', ''),
+            'ret': v.get('ret'), 'yr': v.get('yr'),
+            'dam_u': round(v['dam_u']), 'dam_d': round(v['dam_d'], 2),
+            'tes_u': round(v['tes_u']), 'tes_d': round(v['tes_d'], 2),
+            'tot_d': round(v['dam_d'] + v['tes_d'] + v['oth_d'], 2),
+        })
+    sku_out.sort(key=lambda x: -x['tot_d'])
+
+    mo_out = sorted(
+        [{'ret': m['ret'], 'yr': m['yr'], 'mo': m['mo'],
+          'net': (round(m['net'], 2) if m['net'] is not None else None),
+          'dam': round(m['dam'], 2), 'tes': round(m['tes'], 2),
+          'ra': (round(m['ra'], 2) if m['ra'] is not None else None),
+          'dam_pct': m['dam_pct'], 'tes_pct': m['tes_pct'],
+          # gross needs a net-sales denominator; None when the retailer doesn't publish one
+          # (MECCA's claim reports don't), so a missing denominator can't masquerade as zero.
+          'gross': (round(m['net'] + m['dam'] + m['tes'], 2) if m['net'] is not None else None)}
+         for m in monthly],
+        key=lambda x: (x['ret'], x['yr'], x['mo']))
+
+    cur = [m for m in mo_out if m['yr'] == current_year]
+    with_net = [m for m in cur if m['gross'] is not None]
+    gross = sum(m['gross'] for m in with_net)
+    # Ratios use only the months that actually have a denominator, and the dollars that go with
+    # them — mixing a retailer's chargebacks into the numerator while its sales are missing from
+    # the denominator would overstate the rate.
+    dam_rated = sum(m['dam'] for m in with_net)
+    tes_rated = sum(m['tes'] for m in with_net)
+    kpis = {
+        'dam_d': round(sum(m['dam'] for m in cur), 2),
+        'tes_d': round(sum(m['tes'] for m in cur), 2),
+        'ra_d': round(sum(m['ra'] or 0 for m in cur), 2),
+        'gross': round(gross, 2),
+        'dam_pct': (dam_rated / gross) if gross else None,
+        'tes_pct': (tes_rated / gross) if gross else None,
+        'rated_retailers': sorted({m['ret'] for m in with_net}),
+        'unrated_retailers': sorted({m['ret'] for m in cur if m['gross'] is None}),
+        'dam_u': round(sum(s['dam_u'] for s in sku_out if s['yr'] == current_year)),
+        'tes_u': round(sum(s['tes_u'] for s in sku_out if s['yr'] == current_year)),
+        'year': current_year,
+    }
+    return {
+        'sku': sku_out, 'monthly': mo_out, 'kpis': kpis,
+        'retailers': sorted({m['ret'] for m in mo_out if m['ret']}),
+        'has_weekly': any(r.get('wk') for r in rows),
+        'allocated_note': any((r.get('alloc') or '').startswith('allocated') for r in rows),
+    }
 
 
 def _build_daash(rows, config):
@@ -1531,13 +1660,22 @@ def _bf(wk):
 
 
 def _build_sku_ret_weekly(sales_df, forecast_data, fc2d, current_year):
-    """SKU × Retailer × Week detail: {yr, ic, ret, wk, ty, ly, fc_d, bd_d}."""
-    g = sales_df.groupby(['Year', 'Item Code', 'Retailer', 'Week']).agg({
-        'TY Total Sales $': 'sum', 'LY Total Sales $': 'sum'}).reset_index()
+    """SKU × Retailer × Week detail: {yr, ic, ret, wk, ty, ly, ty_u, ty_bm, ty_dc, fc_d, bd_d}.
+
+    Units and the B&M/.com split are carried here (not just at the all-retailer grain) so the
+    SKU view can be shown in units as well as dollars, and a SKU can be drilled retailer ->
+    channel without a second pass over the data.
+    """
+    aggs = {'TY Total Sales $': 'sum', 'LY Total Sales $': 'sum'}
+    for c in ('TY Total Sales Units', 'TY B&M Sales $', 'TY Dotcom Sales $'):
+        if c in sales_df.columns:
+            aggs[c] = 'sum'
+    g = sales_df.groupby(['Year', 'Item Code', 'Retailer', 'Week']).agg(aggs).reset_index()
     out = []
     for _, r in g.iterrows():
         ty = float(r['TY Total Sales $']); ly = float(r['LY Total Sales $'])
-        if ty == 0 and ly == 0:
+        u = float(r.get('TY Total Sales Units') or 0)
+        if ty == 0 and ly == 0 and u == 0:
             continue
         yr = int(r['Year']); ic = int(r['Item Code']); wk = int(r['Week']); ret = r['Retailer']
         fc_d = 0.0
@@ -1545,7 +1683,52 @@ def _build_sku_ret_weekly(sales_df, forecast_data, fc2d, current_year):
             fc_d = fc2d(ret, ic, forecast_data[ret].get((ic, wk), 0))
         bd_d = round(fc_d * _bf(wk), 2) if fc_d else 0.0
         out.append({'yr': yr, 'ic': ic, 'ret': ret, 'wk': wk,
-                    'ty': round(ty, 2), 'ly': round(ly, 2), 'fc_d': round(fc_d, 2), 'bd_d': bd_d})
+                    'ty': round(ty, 2), 'ly': round(ly, 2), 'ty_u': round(u),
+                    'ty_bm': round(float(r.get('TY B&M Sales $') or 0), 2),
+                    'ty_dc': round(float(r.get('TY Dotcom Sales $') or 0), 2),
+                    'fc_d': round(fc_d, 2), 'bd_d': bd_d})
+    return out
+
+
+def _build_week_calendar(week_date_map, current_year=None):
+    """{week: {'f': '<445 month>', 'g': [[monthNum, weight], ...]}} for the calendar toggle.
+
+    A fiscal week can straddle a calendar-month boundary, so a Gregorian view has to split it.
+    Each week is spread across the calendar months its seven days fall in, weighted by day
+    count — exact for weeks inside one month, and within a few days at boundaries. That is the
+    best available without day-level sales for every retailer, and it is labelled as such in the
+    UI so nobody reads it as reported daily data.
+    """
+    import datetime as _dt
+    out = {}
+    for key, we in (week_date_map or {}).items():
+        if we is None:
+            continue
+        # keyed by (year, week); the chart covers the current year only
+        wk = key[1] if isinstance(key, (tuple, list)) else key
+        if current_year is not None and isinstance(key, (tuple, list)) and int(key[0]) != current_year:
+            continue
+        try:
+            end = we.date() if hasattr(we, 'date') else we
+            days = [end - _dt.timedelta(days=i) for i in range(7)]
+        except Exception:
+            continue
+        # Keep only days in the week-end's own calendar year, then renormalise. Fiscal W1 ends a
+        # few days into January, so its remaining days belong to the PREVIOUS December — charting
+        # those in the current year's December would drop them at the far right of the axis, which
+        # reads as a phantom December. Renormalising instead folds them into January: the week's
+        # sales are preserved and the boundary approximation is flagged in the UI.
+        yr_of_end = end.year
+        counts = {}
+        for d in days:
+            if d.year != yr_of_end:
+                continue
+            counts[d.month] = counts.get(d.month, 0) + 1
+        total = sum(counts.values())
+        if not total:
+            continue
+        out[int(wk)] = {'g': sorted([[m, c / total] for m, c in counts.items()],
+                                    key=lambda x: -x[1])}
     return out
 
 

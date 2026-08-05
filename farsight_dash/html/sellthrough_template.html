@@ -300,6 +300,7 @@ document.addEventListener('DOMContentLoaded',function(){
   <div class="nav-tab" data-page="launches">New Launches</div>
   <div class="nav-tab" data-page="doors">Sephora Doors</div>
   <div class="nav-tab" data-page="dtc">DTC Performance</div>
+  <div class="nav-tab" data-page="returns">Returns &amp; Testers</div>
   <div class="nav-tab" data-page="inv-overview">Inventory OH</div>
   <div class="nav-tab" data-page="daash">DAASH</div>
   <div class="nav-tab" data-page="sku-master">SKU Master</div>
@@ -317,6 +318,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <div id="page-launches" class="page"></div>
 <div id="page-doors" class="page"></div>
 <div id="page-dtc" class="page"></div>
+<div id="page-returns" class="page"></div>
 <div id="page-inv-overview" class="page"></div>
 <div id="page-inv-detail" class="page"></div>
 <div id="page-daash" class="page"></div>
@@ -498,22 +500,28 @@ function dc(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
 // AS-OF-WEEK + CHANNEL FILTERS (recompute ret_summary from weekly)
 // =====================================================================
 const _origRetSummary = JSON.parse(JSON.stringify(DATA.ret_summary));
-const _splitRet = M.channel_split_retailer || null;
-// Channel-aware field pickers. B&M = split-retailer brick-and-mortar only;
-// .com = split-retailer online + every other (online/wholesale) channel.
+// Retailers that report a real in-store vs online split. Derived from the DATA at build time
+// (`channel_split_retailers`) rather than from one config string — more than one retailer can
+// report it, and which ones do changes as feeds are added. Falls back to the old single-value
+// `channel_split_retailer` so existing clients are unaffected.
+const _splitRets = new Set(M.channel_split_retailers
+  || (M.channel_split_retailer ? [M.channel_split_retailer] : []));
+const _isSplit = ret => _splitRets.has(ret);
+// Channel-aware field pickers. B&M = in-store for any retailer that reports the split;
+// .com = those retailers' online plus every other (inherently online/wholesale) channel.
 function _tyCh(r,ch){
   if(ch==='all')return r.ty||0;
-  if(r.ret===_splitRet)return ch==='bm'?(r.ty_bm||0):(r.ty_dc||0);
+  if(_isSplit(r.ret))return ch==='bm'?(r.ty_bm||0):(r.ty_dc||0);
   return ch==='bm'?0:(r.ty||0);
 }
 function _lyCh(r,ch){
   if(ch==='all')return r.ly||0;
-  if(r.ret===_splitRet)return ch==='bm'?(r.ly_bm||0):(r.ly_dc||0);
+  if(_isSplit(r.ret))return ch==='bm'?(r.ly_bm||0):(r.ly_dc||0);
   return ch==='bm'?0:(r.ly||0);
 }
 function _fcCh(r,ch){
   if(ch==='all')return r.fc_d||0;
-  if(r.ret===_splitRet)return ch==='bm'?(r.fc_d_bm||0):(r.fc_d_dc||0);
+  if(_isSplit(r.ret))return ch==='bm'?(r.fc_d_bm||0):(r.fc_d_dc||0);
   return ch==='bm'?0:(r.fc_d||0);
 }
 function recomputeRetSummary(asOfWk,ch){
@@ -839,7 +847,140 @@ function renderActive(){
   else if(p==='launches')renderNewLaunches();
   else if(p==='doors')renderDoors();
   else if(p==='dtc')renderDTCFromState();
+  else if(p==='returns')renderReturns();
   else if(p==='status')renderStatus();
+}
+
+// =====================================================================
+// RETURNS & TESTERS  (Sephora RA / MECCA claims — damages, testers, chargebacks)
+// =====================================================================
+const _RET_MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function renderReturns(){
+  const el=document.getElementById('page-returns');
+  const R=DATA.returns||{};
+  if(!R.kpis){el.innerHTML='<div class="chart-container">No returns or testers data loaded.</div>';return;}
+  const K=R.kpis;
+  // Honour the global retailer filter; 'All' means every retailer that reports chargebacks.
+  const sel=state.retailers[0]==='All'?null:new Set(state.retailers);
+  const mo=(R.monthly||[]).filter(m=>!sel||sel.has(m.ret));
+  const skus=(R.sku||[]).filter(s=>!sel||sel.has(s.ret));
+  const cur=mo.filter(m=>m.yr===K.year);
+  // Ratios use only months that actually carry a net-sales denominator. Counting a retailer's
+  // chargebacks in the numerator while its sales are absent from the denominator inflates the
+  // rate — MECCA's claim reports have no net-sales column.
+  const rated=cur.filter(m=>m.gross!=null);
+  const gross=rated.reduce((a,m)=>a+m.gross,0);
+  const damR=rated.reduce((a,m)=>a+m.dam,0), tesR=rated.reduce((a,m)=>a+m.tes,0);
+  const dam=cur.reduce((a,m)=>a+(m.dam||0),0), tes=cur.reduce((a,m)=>a+(m.tes||0),0);
+  const pct=(v)=>gross?((v/gross)*100).toFixed(1)+'%':'—';
+  const noDenom=[...new Set(cur.filter(m=>m.gross==null).map(m=>m.ret))];
+  const unitsMode=state.returnsUnits===true;
+
+  let h='';
+  h+='<div style="background:#FBF0D8;border:1px solid #E6C86B;border-radius:8px;padding:9px 13px;'
+   +'margin-bottom:14px;font-size:11.5px;color:#6B5410;line-height:1.5;">'
+   +'<strong>How to read this:</strong> % of gross adds damages, testers and use tax back to net sales '
+   +'— the retailer&rsquo;s own formula, so these match the figures on their statements. '
+   +(R.allocated_note?'Reports arrive monthly; the weekly view splits each month by that week&rsquo;s '
+     +'share of sales and is marked <em>allocated</em>, not reported. ':'')
+   +(noDenom.length?'<br><strong>'+noDenom.join(', ')+'</strong> report chargebacks but not net sales, '
+     +'so their dollars are included above while the % -of-gross rates are based on '
+     +'the retailers that do ('+[...new Set(rated.map(m=>m.ret))].join(', ')+').':'')
+   +'</div>';
+
+  h+='<div class="kpi-grid">';
+  h+=kpi('Damages '+K.year,fmtK(dam),pct(damR)+' of gross',
+        {tip:'Damaged / expired product charged back by the retailer, year to date. The rate uses only retailers that report net sales.'});
+  h+=kpi('Testers '+K.year,fmtK(tes),pct(tesR)+' of gross',
+        {tip:'Tester units charged back by the retailer, year to date. The rate uses only retailers that report net sales.'});
+  h+=kpi('Damages + Testers',fmtK(dam+tes),pct(damR+tesR)+' of gross',
+        {tip:'Total chargebacks as a share of gross sales.'});
+  // Uses the rated retailers only, so this can't disagree with the percentages above. Mixing
+  // in a retailer whose 'testers' means something different (MECCA books tester CONVERSIONS)
+  // would otherwise flip the ratio.
+  h+=kpi('Damages : Testers',tesR?(damR/tesR).toFixed(1)+'&times;':'—','damages vs testers',
+        {tip:'Damages divided by testers for the retailers that report net sales. Shows which is the bigger commercial problem.'});
+  // Only meaningful where a rate exists at all; naming a "worst month" with no rate beside it
+  // just raises a question it can't answer.
+  const worst=rated.filter(m=>m.dam_pct!=null).sort((a,b)=>b.dam_pct-a.dam_pct)[0];
+  h+=kpi('Worst month',worst?_RET_MONTHS[worst.mo-1]+' '+worst.yr:'—',
+        worst?(worst.dam_pct*100).toFixed(1)+'% damages of gross':'no net-sales denominator reported',
+        {tip:'Month with the highest damages rate — the one worth explaining to the retailer.'});
+  h+='</div>';
+
+  h+='<div class="chart-row full"><div class="chart-container"><div class="chart-title">'
+   +'Damages &amp; Testers as % of Gross &mdash; Monthly'
+   +chartTip('Each retailer&rsquo;s reported damages and testers divided by gross sales (net + damages + testers). Source: Sephora RA statements, MECCA claim reports.')
+   +'</div><div style="position:relative;height:300px;"><canvas id="retPctChart"></canvas></div></div></div>';
+
+  h+='<div class="chart-row">'
+   +'<div class="chart-container"><div class="chart-title">Top 15 SKUs by Chargeback $'
+   +'<span class="chart-hint">(damages vs testers)</span></div><canvas id="retTopSku"></canvas></div>'
+   +'<div class="chart-container"><div class="chart-title">Damages $ by Month</div>'
+   +'<canvas id="retMoBar"></canvas></div></div>';
+
+  h+='<div class="table-container"><div class="table-title">SKU Detail'
+   +' <span style="font-weight:400;font-size:11px;color:var(--text-muted);cursor:pointer;" '
+   +'onclick="state.returnsUnits=!'+unitsMode+';renderReturns();">&middot; showing '
+   +(unitsMode?'units':'dollars')+' (click to switch)</span></div><div id="retSkuTable"></div></div>';
+  el.innerHTML=h;
+
+  // % of gross, one line per retailer
+  dc('retPctChart');
+  const rets=[...new Set(mo.map(m=>m.ret))];
+  const labels=[...new Set(mo.map(m=>_RET_MONTHS[m.mo-1]+' '+String(m.yr).slice(2)))];
+  const palette=['#727F97','#C46B5C','#7A9A7A','#B79A6B','#8A7461'];
+  charts['retPctChart']=new Chart(document.getElementById('retPctChart'),{type:'line',data:{
+    labels:labels,
+    datasets:rets.flatMap((rt,i)=>[
+      {label:rt+' — damages',data:labels.map(l=>{const m=mo.find(x=>x.ret===rt&&_RET_MONTHS[x.mo-1]+' '+String(x.yr).slice(2)===l);return m&&m.dam_pct!=null?+(m.dam_pct*100).toFixed(2):null;}),
+       borderColor:palette[i%palette.length],backgroundColor:palette[i%palette.length],tension:.3,spanGaps:true},
+      {label:rt+' — testers',data:labels.map(l=>{const m=mo.find(x=>x.ret===rt&&_RET_MONTHS[x.mo-1]+' '+String(x.yr).slice(2)===l);return m&&m.tes_pct!=null?+(m.tes_pct*100).toFixed(2):null;}),
+       borderColor:palette[i%palette.length],backgroundColor:'transparent',borderDash:[5,4],tension:.3,spanGaps:true},
+    ])},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}}},
+      scales:{y:{title:{display:true,text:'% of gross sales'},ticks:{callback:v=>v+'%'}}}}});
+
+  // top SKUs, damages vs testers stacked
+  dc('retTopSku');
+  // exclude the unmatched-style aggregate: it is a bucket, not a SKU, and would top the chart
+  const top=skus.filter(s=>s.ic!=null).slice(0,15);
+  charts['retTopSku']=new Chart(document.getElementById('retTopSku'),{type:'bar',data:{
+    labels:top.map(s=>(s.desc||'').substring(0,28)),
+    datasets:[{label:'Damages',data:top.map(s=>unitsMode?s.dam_u:s.dam_d),backgroundColor:'#C46B5C'},
+              {label:'Testers',data:top.map(s=>unitsMode?s.tes_u:s.tes_d),backgroundColor:'#B79A6B'}]},
+    options:{indexAxis:'y',responsive:true,plugins:{legend:{position:'top'}},
+      scales:{x:{stacked:true,ticks:{callback:v=>unitsMode?fmtN(v):fmtK(v)}},y:{stacked:true}}}});
+
+  // damages $ by month
+  dc('retMoBar');
+  charts['retMoBar']=new Chart(document.getElementById('retMoBar'),{type:'bar',data:{
+    labels:labels,
+    datasets:[{label:'Damages',data:labels.map(l=>mo.filter(x=>_RET_MONTHS[x.mo-1]+' '+String(x.yr).slice(2)===l).reduce((a,x)=>a+x.dam,0)),backgroundColor:'#C46B5C'},
+              {label:'Testers',data:labels.map(l=>mo.filter(x=>_RET_MONTHS[x.mo-1]+' '+String(x.yr).slice(2)===l).reduce((a,x)=>a+x.tes,0)),backgroundColor:'#B79A6B'}]},
+    options:{responsive:true,plugins:{legend:{position:'top'}},
+      scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>fmtK(v)}}}}});
+
+  // SKU table
+  const cols=[{l:'SKU',t:'str',a:''},{l:'Category',t:'str',a:''},{l:'Collection',t:'str',a:''},
+    {l:'Retailer',t:'str',a:''},
+    {l:unitsMode?'Damage Units':'Damages $',t:'num',a:'r'},
+    {l:unitsMode?'Tester Units':'Testers $',t:'num',a:'r'},
+    {l:unitsMode?'Total Units':'Total $',t:'num',a:'r'}];
+  let tb='<table id="retSkuTbl"><thead><tr>';
+  cols.forEach((c,i)=>{tb+=`<th class="${c.a}" onclick="sortTable('retSkuTbl',${i},'${c.t}')">${c.l}<span class="sort-arrow">&#9650;</span></th>`;});
+  tb+='</tr></thead><tbody>';
+  skus.slice(0,200).forEach(s=>{
+    const du=unitsMode?s.dam_u:s.dam_d, tu=unitsMode?s.tes_u:s.tes_d;
+    const tot=unitsMode?(s.dam_u+s.tes_u):s.tot_d;
+    const f=unitsMode?fmtN:fmtK;
+    tb+='<tr><td>'+cellStr((s.desc||'').substring(0,38))+'</td><td>'+cellStr(s.cat)+'</td>'
+      +'<td>'+cellStr(s.coll)+'</td><td>'+cellStr(s.ret)+'</td>'
+      +`<td class="r" data-v="${du}">`+f(du)+'</td>'
+      +`<td class="r" data-v="${tu}">`+f(tu)+'</td>'
+      +`<td class="r" data-v="${tot}"><strong>`+f(tot)+'</strong></td></tr>';
+  });
+  tb+='</tbody></table>';
+  document.getElementById('retSkuTable').innerHTML=tb;
 }
 
 function renderStatus(){
@@ -1477,9 +1618,9 @@ function renderOverview(){
   // --- Channel mix ---
   dc('ovChannel');
   const chData=DATA.monthly.filter(r=>r.yr===M.current_year&&(er==='All'?r.ret==='All':r.ret===er)).sort((a,b)=>a.mo_n-b.mo_n);
-  // Dynamic channel title — if filtered to a specific retailer, note it; otherwise "Sephora Only" since B&M/Dotcom split is Sephora-specific
-  const chRetLabel=er!=='All'?er:'All Channels (B&M/Dotcom split is Sephora)';
-  document.getElementById('ovChannelTitle').innerHTML='Channel Mix &mdash; B&M vs Dotcom &mdash; '+chRetLabel+chartTip('Monthly split between brick-and-mortar (in-store) and dotcom (online) sales. B&M/Dotcom channel split is primarily from Sephora data. Other retailers may be dotcom-only. Source: Sales Database.');
+  // Which retailers report the split is data-driven (was hardcoded to Sephora).
+  const chRetLabel=er!=='All'?er:('All Channels'+(_splitRets.size?' (split reported by '+[..._splitRets].join(', ')+')':''));
+  document.getElementById('ovChannelTitle').innerHTML='Channel Mix &mdash; B&M vs Dotcom &mdash; '+chRetLabel+chartTip('Monthly split between brick-and-mortar (in-store) and dotcom (online) sales. Reported by '+([..._splitRets].join(', ')||'no retailer yet')+'. Retailers without a split are treated as online/wholesale. Source: Sales Database.');
   charts['ovChannel']=new Chart(document.getElementById('ovChannel'),{type:'bar',data:{
     labels:chData.map(r=>r.mo),
     datasets:[
@@ -1539,6 +1680,9 @@ function buildSkuYoY(){
         <div style="flex:1;"><label>SKU (number or product name)</label><br><input class="search-box" id="yoySkuSearch" list="yoySkuList" placeholder="e.g. 1001 or 'Serum'" style="width:100%;"></div>
         <datalist id="yoySkuList">${skus.map(s=>'<option value="'+s.ic+' — '+(s.desc||'').replace(/"/g,'&quot;')+'">').join('')}</datalist>
         <div><label>Retailer</label><br><select id="yoyRet">${rets.map(r=>'<option value="'+r+'">'+r+'</option>').join('')}</select></div>
+        <div><label>Measure</label><br><select id="yoyMetric"><option value="d">Dollars</option><option value="u">Units</option></select></div>
+        <div><label>Granularity</label><br><select id="yoyGrain"><option value="w">Weekly</option><option value="m">Monthly</option></select></div>
+        <div><label>Calendar</label><br><select id="yoyCal"><option value="f">Fiscal (4-4-5)</option><option value="g">Gregorian</option></select></div>
         <div><label>Show</label><br><label style="font-size:11px;cursor:pointer;margin-right:8px;"><input type="checkbox" id="yoyShowFc" checked> Forecast</label>${hasBudget?'<label style="font-size:11px;cursor:pointer;"><input type="checkbox" id="yoyShowBd"> Budget</label>':''}</div>
       </div>
       <div id="yoyTitle" style="font-size:12px;font-weight:600;margin-bottom:6px;"></div>
@@ -1556,40 +1700,92 @@ function buildSkuYoY(){
     const showFc=document.getElementById('yoyShowFc').checked;
     const showBd=hasBudget&&document.getElementById('yoyShowBd')&&document.getElementById('yoyShowBd').checked;
     const retSel=document.getElementById('yoyRet').value;
+    const metric=(document.getElementById('yoyMetric')||{}).value||'d';
+    const grain=(document.getElementById('yoyGrain')||{}).value||'w';
+    const cal=(document.getElementById('yoyCal')||{}).value||'f';
+    const units=metric==='u';
     const yr=M.current_year, lyYr=yr-1;
+    const fmtV=v=>units?fmtN(v):fmtK(v);
+
+    // --- weekly series first; month views are rolled up from it ---
     const tyMap={},lyMap={},fcMap={},bdMap={};
     if(retSel==='All'){
-      (DATA.sku_weekly||[]).filter(r=>r.ic===sku.ic).forEach(r=>{tyMap[r.wk]=r.ty||0;lyMap[r.wk]=r.ly||0;fcMap[r.wk]=r.fc_d||0;bdMap[r.wk]=r.bd_d||0;});
+      (DATA.sku_weekly||[]).filter(r=>r.ic===sku.ic).forEach(r=>{
+        tyMap[r.wk]=units?(r.ty_u||0):(r.ty||0);
+        // LY units are not carried at this grain; fall back to dollars-only for the LY line.
+        lyMap[r.wk]=units?null:(r.ly||0);
+        fcMap[r.wk]=r.fc_d||0;bdMap[r.wk]=r.bd_d||0;});
     } else {
       (DATA.sku_ret_weekly||[]).filter(r=>r.ic===sku.ic&&r.ret===retSel).forEach(r=>{
-        if(r.yr===yr){tyMap[r.wk]=(tyMap[r.wk]||0)+(r.ty||0);fcMap[r.wk]=(fcMap[r.wk]||0)+(r.fc_d||0);bdMap[r.wk]=(bdMap[r.wk]||0)+(r.bd_d||0);}
-        else if(r.yr===lyYr){lyMap[r.wk]=(lyMap[r.wk]||0)+(r.ty||0);}
+        const val=units?(r.ty_u||0):(r.ty||0);
+        if(r.yr===yr){tyMap[r.wk]=(tyMap[r.wk]||0)+val;fcMap[r.wk]=(fcMap[r.wk]||0)+(r.fc_d||0);bdMap[r.wk]=(bdMap[r.wk]||0)+(r.bd_d||0);}
+        else if(r.yr===lyYr){lyMap[r.wk]=(lyMap[r.wk]||0)+val;}
       });
     }
     const allWks=[];for(let w=1;w<=52;w++)allWks.push(w);
-    const tyData=allWks.map(w=>w<=M.current_week?(tyMap[w]||0):null);
-    const lyData=allWks.map(w=>lyMap[w]!=null?lyMap[w]:0);
-    const fcData=allWks.map(w=>fcMap[w]||0);
-    const bdData=allWks.map(w=>bdMap[w]||0);
+    let labels,tyData,lyData,fcData,bdData,xTitle;
+    if(grain==='w'){
+      labels=allWks.map(w=>'W'+w);
+      tyData=allWks.map(w=>w<=M.current_week?(tyMap[w]||0):null);
+      lyData=allWks.map(w=>lyMap[w]!=null?lyMap[w]:(units?null:0));
+      fcData=allWks.map(w=>fcMap[w]||0);bdData=allWks.map(w=>bdMap[w]||0);
+      xTitle='Fiscal Week';
+    } else {
+      // Roll weeks up to months. Fiscal uses the 4-4-5 month the week belongs to; Gregorian
+      // spreads each week across the calendar months its days fall in (M.week_greg).
+      const mos=_RET_MONTHS.slice();
+      const acc=()=>mos.map(()=>0), accN=()=>mos.map(()=>null);
+      const t=acc(),l=acc(),f=acc(),b=acc();
+      const seenTy=mos.map(()=>false), seenLy=mos.map(()=>false);
+      const spread=(wk)=>{
+        if(cal==='g'){
+          const g=((M.week_greg||{})[wk]||{}).g;
+          if(g&&g.length)return g.map(([m,wt])=>[m-1,wt]);
+        }
+        const fm=(M.week_month_map||{})[wk];
+        const idx=fm?mos.indexOf(String(fm).slice(0,3)):-1;
+        return [[idx>=0?idx:Math.min(11,Math.floor((wk-1)/4.333)),1]];
+      };
+      allWks.forEach(w=>{
+        spread(w).forEach(([mi,wt])=>{
+          if(mi<0||mi>11)return;
+          if(w<=M.current_week&&tyMap[w]!=null){t[mi]+=(tyMap[w]||0)*wt;seenTy[mi]=true;}
+          if(lyMap[w]!=null){l[mi]+=(lyMap[w]||0)*wt;seenLy[mi]=true;}
+          f[mi]+=(fcMap[w]||0)*wt;b[mi]+=(bdMap[w]||0)*wt;
+        });
+      });
+      labels=mos;
+      tyData=t.map((v,i)=>seenTy[i]?Math.round(v*100)/100:null);
+      lyData=l.map((v,i)=>seenLy[i]?Math.round(v*100)/100:(units?null:0));
+      fcData=f.map(v=>Math.round(v*100)/100);bdData=b.map(v=>Math.round(v*100)/100);
+      xTitle=(cal==='g'?'Calendar Month':'Fiscal Month (4-4-5)');
+    }
+
     const sets=[
       {label:'TY ('+yr+')',data:tyData,borderColor:'#727F97',backgroundColor:'rgba(114,127,151,.1)',borderWidth:2,fill:true,tension:.3,pointRadius:2,spanGaps:false},
-      {label:'LY ('+lyYr+')',data:lyData,borderColor:'#A5ABAF',borderDash:[5,3],borderWidth:1.5,fill:false,tension:.3,pointRadius:0},
     ];
-    if(showFc&&fcData.some(v=>v>0))sets.push({label:'Forecast',data:fcData,borderColor:'#5B9BD5',borderDash:[4,4],borderWidth:1.5,fill:false,tension:.3,pointRadius:0});
-    if(showBd&&bdData.some(v=>v>0))sets.push({label:'Budget',data:bdData,borderColor:'#6B4F8A',borderDash:[2,2],borderWidth:1.5,fill:false,tension:.3,pointRadius:0});
-    document.getElementById('yoyTitle').innerHTML='Weekly TY vs LY &mdash; <strong>'+(sku.desc||'SKU '+sku.ic)+'</strong> &middot; '+(retSel==='All'?'All Retailers':retSel);
+    if(lyData.some(v=>v!=null))sets.push({label:'LY ('+lyYr+')',data:lyData,borderColor:'#A5ABAF',borderDash:[5,3],borderWidth:1.5,fill:false,tension:.3,pointRadius:0});
+    if(!units&&showFc&&fcData.some(v=>v>0))sets.push({label:'Forecast',data:fcData,borderColor:'#5B9BD5',borderDash:[4,4],borderWidth:1.5,fill:false,tension:.3,pointRadius:0});
+    if(!units&&showBd&&bdData.some(v=>v>0))sets.push({label:'Budget',data:bdData,borderColor:'#6B4F8A',borderDash:[2,2],borderWidth:1.5,fill:false,tension:.3,pointRadius:0});
+    const gregNote=(grain==='m'&&cal==='g')?' <span class="data-flag" title="Fiscal weeks are spread across calendar months by day count, so weeks that straddle a month boundary are apportioned. Exact within a month, within a few days at boundaries.">approximated at month boundaries</span>':'';
+    const unitNote=(units&&retSel==='All')?' <span class="data-flag" title="Prior-year units are not carried at the all-retailer grain — pick a retailer to compare units year on year, or switch to dollars.">LY units unavailable for All Retailers</span>':'';
+    document.getElementById('yoyTitle').innerHTML=(grain==='w'?'Weekly':(cal==='g'?'Calendar-monthly':'Fiscal-monthly'))
+      +' TY vs LY &mdash; <strong>'+(sku.desc||'SKU '+sku.ic)+'</strong> &middot; '
+      +(retSel==='All'?'All Retailers':retSel)+' &middot; '+(units?'units':'dollars')+gregNote+unitNote;
     dc('yoyChart');
-    charts['yoyChart']=new Chart(document.getElementById('yoyChart'),{type:'line',data:{labels:allWks.map(w=>'W'+w),datasets:sets},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtK(c.parsed.y||0)}}},scales:{y:{ticks:{callback:v=>fmtK(v)},title:{display:true,text:'Sell-Through ($)'}},x:{title:{display:true,text:'Fiscal Week'}}}}});
-    const sumTY=tyData.reduce((a,v)=>a+(v||0),0),ytdLY=lyData.slice(0,M.current_week).reduce((a,v)=>a+(v||0),0);
+    charts['yoyChart']=new Chart(document.getElementById('yoyChart'),{type:'line',data:{labels:labels,datasets:sets},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtV(c.parsed.y||0)}}},scales:{y:{ticks:{callback:v=>fmtV(v)},title:{display:true,text:units?'Sell-Through (units)':'Sell-Through ($)'}},x:{title:{display:true,text:xTitle}}}}});
+    const sumTY=tyData.reduce((a,v)=>a+(v||0),0);
+    const ytdLY=lyData.reduce((a,v)=>a+(v||0),0);
     const yoy=ytdLY?((sumTY-ytdLY)/Math.abs(ytdLY)*100):null;
-    let s='YTD: <strong>'+fmtK(sumTY)+'</strong>';
-    if(yoy!=null)s+=' &middot; vs LY (same wks): <strong>'+(yoy>=0?'+':'')+yoy.toFixed(1)+'%</strong> ('+fmtK(ytdLY)+' LY)';
-    if(showBd){const bdYtd=bdData.slice(0,M.current_week).reduce((a,v)=>a+v,0);if(bdYtd>0)s+=' &middot; Budget YTD: '+fmtK(bdYtd);}
-    document.getElementById('yoySummary').innerHTML=s;
+    let sm='YTD: <strong>'+fmtV(sumTY)+'</strong>';
+    if(yoy!=null)sm+=' &middot; vs LY: <strong>'+(yoy>=0?'+':'')+yoy.toFixed(1)+'%</strong> ('+fmtV(ytdLY)+' LY)';
+    document.getElementById('yoySummary').innerHTML=sm;
   }
+
   inp.oninput=draw;
   document.getElementById('yoyRet').onchange=draw;
+  ['yoyMetric','yoyGrain','yoyCal'].forEach(id=>{const e=document.getElementById(id);if(e)e.onchange=draw;});
   document.getElementById('yoyShowFc').onchange=draw;
   if(document.getElementById('yoyShowBd'))document.getElementById('yoyShowBd').onchange=draw;
   draw();
@@ -1678,6 +1874,16 @@ function renderSKU(){
   document.getElementById('skuTableWrap').innerHTML=th;
 }
 
+// Expand/collapse the in-store vs online sub-rows under a retailer in the SKU modal.
+function toggleSkuChannel(rid){
+  const a=document.getElementById(rid+'_a');
+  let open=false;
+  [1,2].forEach(n=>{const el=document.getElementById(rid+'_'+n);
+    if(el){open=el.style.display==='none';el.style.display=open?'':'none';}});
+  if(a)a.innerHTML=open?'&#9660;':'&#9654;';
+  if(window.event)window.event.stopPropagation();
+}
+
 function showSKUDetail(ic){
   const series=DATA.sku_series.find(s=>s.ic===ic);
   const sku=DATA.skus.find(s=>s.ic===ic);
@@ -1690,12 +1896,34 @@ function showSKUDetail(ic){
   if(sku.risk){const rc=sku.risk==='critical'?'var(--red)':sku.risk==='warning'?'var(--yellow)':sku.risk==='over'?'var(--blue)':'var(--green)';
     h+=`<div class="kpi-card" style="padding:12px;cursor:default;border-color:${rc}"><div class="kpi-label">Risk Status</div><div class="kpi-value" style="font-size:16px;color:${rc}">${sku.risk.toUpperCase()}</div><div class="kpi-sub">${sku.risk_pct!=null?sku.risk_pct+'% of plan':''}</div></div>`;}
   h+=`</div>`;
-  h+=`<h4 style="margin:12px 0 8px;font-size:13px;">Retailer Breakdown (YTD)</h4>`;
-  h+=`<table><thead><tr><th>Retailer</th><th class="r">TY $</th><th class="r">LY $</th><th class="r">% Chg</th></tr></thead><tbody>`;
+  h+=`<h4 style="margin:12px 0 8px;font-size:13px;">Retailer Breakdown (YTD) `
+    +`<span style="font-weight:400;font-size:11px;color:var(--text-muted);">`
+    +`&middot; click a retailer that reports a channel split to see in-store vs online</span></h4>`;
+  h+=`<table><thead><tr><th>Retailer</th><th class="r">TY $</th><th class="r">TY Units</th><th class="r">LY $</th><th class="r">% Chg</th></tr></thead><tbody>`;
   if(sku.rets){
+    // Channel + unit detail per retailer for this SKU, summed over the current year.
+    const chan={};
+    (DATA.sku_ret_weekly||[]).filter(r=>r.ic===ic&&r.yr===M.current_year).forEach(r=>{
+      const c=chan[r.ret]||(chan[r.ret]={bm:0,dc:0,u:0});
+      c.bm+=r.ty_bm||0;c.dc+=r.ty_dc||0;c.u+=r.ty_u||0;
+    });
     Object.entries(sku.rets).sort((a,b)=>b[1].ty-a[1].ty).forEach(([r,v])=>{
       const d=delta(v.ty,v.ly);const cls=d==null?'':(d>=0?'pos':'neg');
-      h+=`<tr><td>${r}</td><td class="r">${fmtK(v.ty)}</td><td class="r">${fmtK(v.ly)}</td><td class="r ${cls}">${fmtPct(d)}</td></tr>`;
+      const c=chan[r]||{bm:0,dc:0,u:0};
+      const splittable=_isSplit(r)&&(c.bm||c.dc);
+      const rid='skch_'+ic+'_'+r.replace(/[^A-Za-z0-9]/g,'');
+      h+=`<tr${splittable?` class="clickable" onclick="toggleSkuChannel('${rid}')"`:''}>`
+        +`<td>${splittable?'<span id="'+rid+'_a" style="display:inline-block;width:12px;color:var(--text-muted);">&#9654;</span> ':'<span style="display:inline-block;width:12px;"></span>'}${r}</td>`
+        +`<td class="r">${fmtK(v.ty)}</td><td class="r">${c.u?fmtN(c.u):'—'}</td>`
+        +`<td class="r">${fmtK(v.ly)}</td><td class="r ${cls}">${fmtPct(d)}</td></tr>`;
+      if(splittable){
+        h+=`<tr id="${rid}_1" style="display:none;background:var(--bg-warm);"><td style="padding-left:30px;color:var(--text-muted);font-size:12px;">In-store (B&amp;M)</td>`
+         +`<td class="r" style="font-size:12px;">${fmtK(c.bm)}</td><td class="r">—</td><td class="r">—</td>`
+         +`<td class="r" style="font-size:12px;color:var(--text-muted);">${v.ty?((c.bm/v.ty)*100).toFixed(0)+'% of TY':''}</td></tr>`;
+        h+=`<tr id="${rid}_2" style="display:none;background:var(--bg-warm);"><td style="padding-left:30px;color:var(--text-muted);font-size:12px;">Online (.com)</td>`
+         +`<td class="r" style="font-size:12px;">${fmtK(c.dc)}</td><td class="r">—</td><td class="r">—</td>`
+         +`<td class="r" style="font-size:12px;color:var(--text-muted);">${v.ty?((c.dc/v.ty)*100).toFixed(0)+'% of TY':''}</td></tr>`;
+      }
     });
   }
   h+='</tbody></table>';
@@ -1898,6 +2126,74 @@ function showOtherCollections(){
   showDrillDown('Other — '+members.length+' smaller collections (click one for by-channel)',members,cols);
 }
 
+// --- Nested category drill-down -------------------------------------------------
+// Category view nests Category > Collection > SKU; Collection view nests Collection > SKU.
+// Within a collection the SKUs *are* the shades, and they keep the order the client's SKU
+// master lists them in (lightest to deepest), which is why the SKU level is not re-sorted
+// by value here.
+const _form=v=>{const t=(v==null?'':String(v)).trim();return(!t||t.toLowerCase()==='nan')?'':t;};
+function _catChildren(grpField,cat,skus){
+  if(!skus.length)return [];
+  const agg=(rows)=>{
+    const ty=rows.reduce((a,s)=>a+periodVal(s).ty,0);
+    const ly=rows.reduce((a,s)=>a+periodVal(s).ly,0);
+    const u=rows.reduce((a,s)=>a+periodUnits(s),0);
+    return {ty,ly,u,pct:delta(ty,ly)};
+  };
+  if(grpField==='cat'){
+    const byColl={};
+    skus.forEach(s=>{const k=(s.coll==null||s.coll==='nan')?'—':String(s.coll);(byColl[k]=byColl[k]||[]).push(s);});
+    return Object.entries(byColl)
+      .map(([name,rows])=>({name,level:1,...agg(rows),skus:rows}))
+      .sort((a,b)=>b.ty-a.ty);
+  }
+  return skus.map(s=>({name:s.desc||('SKU '+s.ic),level:1,ic:s.ic,form:_form(s.sub_cat),...agg([s])}));
+}
+
+function _catChildRows(gid,kids,grpField){
+  let out='';
+  kids.forEach((k,i)=>{
+    const kid=gid+'_k'+i;
+    const cls=k.pct==null?'':(k.pct>=0?'pos':'neg');
+    const hasGrand=grpField==='cat'&&k.skus&&k.skus.length;
+    out+=`<tr id="${kid}" class="catchild ${gid}" style="display:none;background:var(--bg-warm);">`
+      +`<td style="padding-left:26px;font-size:12px;">`
+      +(hasGrand?`<span onclick="event.stopPropagation();toggleCatRow('${kid}')" style="cursor:pointer;display:inline-block;width:13px;color:var(--text-muted);" id="${kid}_a">&#9654;</span> `:'<span style="display:inline-block;width:13px;"></span>')
+      +`${k.name}${hasGrand?` <span style="color:var(--text-muted);font-size:11px;">(${k.skus.length})</span>`:''}`
+      +(_form(k.form)?` <span style="color:var(--text-muted);font-size:10px;">${_form(k.form)}</span>`:'')
+      +`</td>`
+      +`<td class="r" style="font-size:12px;">${fmtK(k.ty)}</td><td class="r" style="font-size:12px;">${fmtK(k.ly)}</td>`
+      +`<td class="r ${cls}" style="font-size:12px;">${fmtPct(k.pct)}</td><td class="r">—</td><td class="r">—</td><td class="r">—</td>`
+      +`<td class="r" style="font-size:12px;">${fmtN(k.u)}</td></tr>`;
+    if(hasGrand){
+      k.skus.forEach((s,j)=>{
+        const ty=periodVal(s).ty,ly=periodVal(s).ly,p=delta(ty,ly);
+        const c2=p==null?'':(p>=0?'pos':'neg');
+        out+=`<tr id="${kid}_g${j}" class="catchild ${kid}" style="display:none;background:var(--bg-warm);">`
+          +`<td style="padding-left:52px;font-size:11.5px;color:var(--text-muted);cursor:pointer;" onclick="event.stopPropagation();showSKUDetail(${s.ic})">${s.desc||('SKU '+s.ic)}`
+          +(_form(s.sub_cat)?` <span style="font-size:10px;">${_form(s.sub_cat)}</span>`:'')+`</td>`
+          +`<td class="r" style="font-size:11.5px;">${fmtK(ty)}</td><td class="r" style="font-size:11.5px;">${fmtK(ly)}</td>`
+          +`<td class="r ${c2}" style="font-size:11.5px;">${fmtPct(p)}</td><td class="r">—</td><td class="r">—</td><td class="r">—</td>`
+          +`<td class="r" style="font-size:11.5px;">${fmtN(periodUnits(s))}</td></tr>`;
+      });
+    }
+  });
+  return out;
+}
+
+// Toggle one level. Collapsing a parent also collapses anything nested beneath it, otherwise
+// re-expanding shows grandchildren that were left open.
+function toggleCatRow(id){
+  const rows=document.querySelectorAll('tr.'+id);
+  if(!rows.length)return;
+  const open=rows[0].style.display==='none';
+  rows.forEach(r=>{r.style.display=open?'':'none';
+    if(!open){document.querySelectorAll('tr.'+r.id).forEach(g=>{g.style.display='none';
+      const ga=document.getElementById(r.id+'_a');if(ga)ga.innerHTML='&#9654;';});}});
+  const a=document.getElementById(id+'_a');
+  if(a)a.innerHTML=open?'&#9660;':'&#9654;';
+}
+
 function renderCategory(){
   document.getElementById('catScopeLabel').textContent='Showing: '+scopeText();
   if(!state.catGroupBy)state.catGroupBy='coll';
@@ -1970,12 +2266,16 @@ function renderCategory(){
       h+=`<td class="r" style="${shCell}">${(c.share*100).toFixed(1)}%</td><td class="r">${fmtN(c.u)}</td></tr>`;return;
     }
     const catJs=String(c.cat).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const gid='catx_'+String(c.cat).replace(/[^A-Za-z0-9]/g,'');
+    const kids=_catChildren(grpField,c.cat,skusByCat[c.cat]||[]);
     h+=`<tr class="clickable" onclick="state.category='${catJs}';renderActive();">`;
-    h+=`<td><strong>${c.cat}</strong></td>`;
+    h+=`<td>${kids.length?`<span onclick="event.stopPropagation();toggleCatRow('${gid}')" style="cursor:pointer;display:inline-block;width:13px;color:var(--text-muted);" id="${gid}_a">&#9654;</span> `:'<span style="display:inline-block;width:13px;"></span>'}<strong>${c.cat}</strong>`
+      +`${kids.length?` <span style="color:var(--text-muted);font-weight:400;font-size:11px;">(${kids.length} ${grpField==='cat'?'collections':'SKUs'})</span>`:''}</td>`;
     h+=`<td class="r" style="cursor:zoom-in;text-decoration:underline dotted" onclick="event.stopPropagation();showGroupChannelDrill('${grpField}','${catJs}')">${fmtK(c.ty)}</td>`;
     h+=`<td class="r">${fmtK(c.ly)}</td><td class="r ${cls}" style="font-weight:700">${fmtPct(c.pct)}</td>`;
     h+=`<td class="r">${c.fc>0?fmtK(c.fc):'N/A'}</td><td class="r ${fcCls}" style="font-weight:700">${c.fcPct!=null?fmtPct(c.fcPct):'N/A'}</td>`;
     h+=`<td class="r" style="${shCell}">${(c.share*100).toFixed(1)}%</td><td class="r">${fmtN(c.u)}</td></tr>`;
+    h+=_catChildRows(gid,kids,grpField);
   });
   const tTy=catMetrics.reduce((a,c)=>a+c.ty,0),tLy=catMetrics.reduce((a,c)=>a+c.ly,0),tFc=catMetrics.reduce((a,c)=>a+c.fc,0),tU=catMetrics.reduce((a,c)=>a+c.u,0);
   h+=`<tr style="font-weight:700;border-top:2px solid var(--border);"><td>TOTAL</td><td class="r">${fmtK(tTy)}</td><td class="r">${fmtK(tLy)}</td><td class="r">${fmtPct(delta(tTy,tLy))}</td><td class="r">${tFc>0?fmtK(tFc):'N/A'}</td><td class="r">${tFc>0?fmtPct(delta(tTy,tFc)):'N/A'}</td><td class="r">100.0%</td><td class="r">${fmtN(tU)}</td></tr>`;

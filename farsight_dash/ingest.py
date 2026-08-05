@@ -972,3 +972,77 @@ def read_daash(config, shared_dirs):
     except Exception as e:
         print(f"  Error reading DAASH data: {e}")
     return out
+
+
+def read_returns(config, shared_dirs):
+    """Read the returns / testers & damages feed (optional).
+
+    Two sheets, both produced by the client pipeline:
+      'Returns'         — one row per (retailer × month × SKU × kind), split to weeks where
+                          the month's sales allow it. `Allocation` distinguishes an allocated
+                          split from a figure the retailer actually reported monthly.
+      'Monthly Summary' — the retailer's own monthly totals (net sales, damages, testers, RA)
+                          which is what the % -of-gross figures are computed from, so the
+                          dashboard never re-derives a number the retailer already published.
+
+    Returns {'rows': [...], 'monthly': [...]} — empty when the feed isn't present.
+    """
+    cfg = config.get('sources', {}).get('returns') or {}
+    if not cfg:
+        return {'rows': [], 'monthly': []}
+    fp = find_file(cfg.get('file_pattern', 'Returns & Testers'), shared_dirs)
+    if not fp:
+        return {'rows': [], 'monthly': []}
+    print(f"  Reading returns / testers: {os.path.basename(fp)}")
+    out = {'rows': [], 'monthly': []}
+    try:
+        df = pd.read_excel(fp, sheet_name=cfg.get('sheet_name', 'Returns'))
+        for _, r in df.iterrows():
+            ic = r.get('Item Code')
+            try:
+                ic = int(ic) if pd.notna(ic) else None
+            except (ValueError, TypeError):
+                ic = None
+            wk = r.get('Week')
+            try:
+                wk = int(wk) if pd.notna(wk) else None
+            except (ValueError, TypeError):
+                wk = None
+            out['rows'].append({
+                'ret': safe_str(r.get('Retailer')), 'yr': int(r.get('Year') or 0),
+                'mo': int(r.get('Month') or 0), 'm445': safe_str(r.get('445 Month')),
+                'wk': wk, 'kind': safe_str(r.get('Kind')), 'ic': ic,
+                'prod': safe_str(r.get('Product')),
+                'u': float(r.get('Units') or 0), 'd': float(r.get('Cost $') or 0),
+                'rt': float(r.get('Retail $') or 0),
+                'alloc': safe_str(r.get('Allocation')),
+            })
+        ms = pd.read_excel(fp, sheet_name=cfg.get('summary_sheet_name', 'Monthly Summary'))
+
+        def _f0(v):
+            """NaN-safe float. `pd.NA or 0` evaluates to NaN because NaN is truthy, which
+            silently poisons every downstream ratio — MECCA's claim reports carry no net-sales
+            column, and that alone was enough to null out all the % -of-gross figures."""
+            return float(v) if pd.notna(v) else 0.0
+
+        for _, r in ms.iterrows():
+            net = r.get('Net Sales $')
+            out['monthly'].append({
+                'ret': safe_str(r.get('Retailer')), 'yr': int(_f0(r.get('Year'))),
+                'mo': int(_f0(r.get('Month'))),
+                # None (not 0) when the retailer doesn't report net sales, so the tab can tell
+                # "no denominator available" apart from "zero sales".
+                'net': (float(net) if pd.notna(net) else None),
+                'dam': _f0(r.get('Damages $')),
+                'tes': _f0(r.get('Testers $')),
+                'ra': (float(r.get('RA Total $')) if pd.notna(r.get('RA Total $')) else None),
+                'dam_pct': (float(r.get('Damages % of Gross'))
+                            if pd.notna(r.get('Damages % of Gross')) else None),
+                'tes_pct': (float(r.get('Testers % of Gross'))
+                            if pd.notna(r.get('Testers % of Gross')) else None),
+            })
+        print(f"    {len(out['rows'])} rows, {len(out['monthly'])} monthly summaries")
+    except Exception as e:
+        print(f"    !! returns feed unreadable ({e}) — tab will be hidden")
+        return {'rows': [], 'monthly': []}
+    return out
