@@ -400,7 +400,32 @@ function annTooltipLines(items,allWks){
   });
   return lines;
 }
+/* ── Chart palette ────────────────────────────────────────────────────────────────────
+   One place for every chart colour. `CP` holds the SEMANTIC roles (this year, last year,
+   forecast, …); `COLORS` is the categorical ramp used when a chart has one series per
+   retailer / category / collection. The values here are the engine defaults — a client
+   overrides any subset via `branding.chart_palette` in its config, injected immediately
+   after this block, so clients without that key render exactly as before. */
+const CP = {
+  ty:'#727F97',            // this year / primary series
+  ly:'#E8DDD5',            // last year — bar fills
+  ly_line:'#A5ABAF',       // last year — line strokes
+  ly_line2:'#A89889',      // last year — line strokes, doors tab
+  fc:'#5B9BD5',            // forecast
+  bd:'#6B4F8A',            // budget
+  pos:'#5CB85C', neg:'#D9534F', warn:'#D4A017',
+  alt:'#8FA1A2',           // secondary series (Dotcom, Core, single-series bars)
+  alt2:'#C9A291',          // tertiary accent (Linear, concentration callout)
+  dam:'#C46B5C', tes:'#B79A6B',
+  point_hi:'#5B9BD5',      // annotated data points
+  neutral:'#888888',
+  fill:'rgba(114,127,151,.1)',       // area fill under the primary line
+  fill_soft:'rgba(114,127,151,.08)',
+  grid:'rgba(0,0,0,.06)', tick:'#737F94',  // chart axis furniture
+  rewound:'#5B9BD5', rewound_fg:'#fff'     // "rewound to week N" badge
+};
 const COLORS = ['#727F97','#EDDCBD','#8FA1A2','#954F72','#A5ABAF','#517176','#5CB85C','#D4A017','#5B9BD5','#D9534F','#E8E2D3','#737F94'];
+const RATING_COLORS = {'A++':'#954F72','A+':'#727F97','A':'#5B9BD5','B':'#5CB85C','C':'#D4A017','D':'#A89889','E':'#888888','Unrated':'#CCCCCC'};
 const MO_ORDER = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
 const FCST_RETS = new Set(M.forecast_retailers || []);
 
@@ -1601,7 +1626,7 @@ function renderOverview(){
       pointBackgroundColor:allWks.map(w=>hasAnnTy(w)?'#5B9BD5':'#727F97'),
       pointBorderColor:allWks.map(w=>hasAnnTy(w)?'#5B9BD5':'#727F97'),
       pointStyle:allWks.map(w=>hasAnnTy(w)?'rectRot':'circle')},
-    {label:'LY ('+(M.current_year-1)+')',data:allWks.map(w=>(lyMap[w]||{}).ty||null),borderColor:'#8FA1A2',borderDash:[6,3],borderWidth:2,fill:false,tension:.3,
+    {label:'LY ('+(M.current_year-1)+')',data:allWks.map(w=>(lyMap[w]||{}).ty||null),borderColor:CP.ly_line,borderDash:[6,3],borderWidth:2,fill:false,tension:.3,
       pointRadius:allWks.map(w=>hasAnnLy(w)?4.5:0),
       pointBackgroundColor:allWks.map(w=>hasAnnLy(w)?'#5B9BD5':'#8FA1A2'),
       pointBorderColor:allWks.map(w=>hasAnnLy(w)?'#5B9BD5':'#8FA1A2'),
@@ -1642,7 +1667,7 @@ function renderOverview(){
   }
   retChartData.sort((a,b)=>(b.ty||0)-(a.ty||0));
   const retLabels=retChartData.map(r=>r.ret);
-  const retDS=[{label:'TY',data:retChartData.map(r=>r.ty||0),backgroundColor:'#8FA1A2'}];
+  const retDS=[{label:'TY',data:retChartData.map(r=>r.ty||0),backgroundColor:CP.ty}];
   if(state.comparison==='ly')retDS.push({label:'LY',data:retChartData.map(r=>r.ly||0),backgroundColor:'#E8DDD5'});
   else if(state.comparison==='fc')retDS.push({label:'Forecast',data:retChartData.map(r=>r.fc||0),backgroundColor:'rgba(91,155,213,.3)'});
 
@@ -1692,7 +1717,7 @@ function renderOverview(){
   charts['ovChannel']=new Chart(document.getElementById('ovChannel'),{type:'bar',data:{
     labels:chData.map(r=>r.mo),
     datasets:[
-      {label:'B&M',data:chData.map(r=>r.ty_bm),backgroundColor:'#8FA1A2',stack:'s'},
+      {label:'B&M',data:chData.map(r=>r.ty_bm),backgroundColor:CP.ty,stack:'s'},
       {label:'Dotcom',data:chData.map(r=>r.ty_dc),backgroundColor:'#5B9BD5',stack:'s'},
     ]
   },options:{responsive:true,plugins:{legend:{position:'top'}},scales:{y:{stacked:true,title:{display:true,text:'Retail Sales ($)'},ticks:{callback:v=>fmtK(v)}},x:{stacked:true,title:{display:true,text:'Fiscal Month'}}}}});
@@ -2813,7 +2838,7 @@ function renderSephoraProductivity(){
   dc('prodHomebay');
   charts['prodHomebay']=new Chart(document.getElementById('prodHomebay'),{type:'line',data:{labels,datasets:[
     {label:'TY',data:hbTY.slice(0,lastI+1),borderColor:'#727F97',backgroundColor:'rgba(114,127,151,.08)',borderWidth:2.5,fill:true,tension:.3,pointRadius:3,spanGaps:false},
-    {label:'LY',data:hbLY.slice(0,lastI+1),borderColor:'#A89889',borderDash:[5,3],borderWidth:1.5,tension:.3,fill:false,pointRadius:2,spanGaps:true},
+    {label:'LY',data:hbLY.slice(0,lastI+1),borderColor:CP.ly_line2,borderDash:[5,3],borderWidth:1.5,tension:.3,fill:false,pointRadius:2,spanGaps:true},
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.raw!=null?(c.raw*100).toFixed(0)+'%':'N/A')}}},scales:{y:{ticks:{callback:v=>(v*100).toFixed(0)+'%'},suggestedMin:0,suggestedMax:1.2,title:{display:true,text:'% vs other brands'}},x:{title:{display:true,text:'Month'}}}}});
   dc('prodEndcap');
   const ev=P.endcap_vs_linear||{ty:[]};const emL=ev.ty.map(r=>r.month);
@@ -3781,6 +3806,11 @@ function initReviewNotes(){
 }
 try{_csvObserver.observe(document.getElementById('pw-content')||document.body,{childList:true,subtree:true});}catch(e){}
 
+/* Per-client chart colours (config: branding.chart_palette). Injected at the very end so it
+   can mutate every palette object, including the two declared partway down beside the tabs
+   that use them. Everything draws on DOMContentLoaded, which fires after this runs. Empty
+   for clients with no chart_palette key, so their charts are untouched. */
+{{CHART_PALETTE_JS}}
 </script>
 </div><!-- /pw-content -->
 </body>
