@@ -203,6 +203,11 @@ th .data-flag{font-size:8px;padding:0 5px;margin-left:4px;}
 .email-table tr.total-row{font-weight:700;border-top:2px solid var(--border);background:var(--bg-warm);}
 .email-table .channel-sub{padding-left:24px;font-weight:400;color:var(--text-muted);}
 
+
+/* ── Optional brand theme overrides (config branding.theme). Emitted last so it wins on
+   ordering without needing !important, except for border-radius which is set inline in
+   many places. Absent for clients without a theme block, so their look is untouched. ── */
+{{THEME_CSS}}
 </style>
 </head>
 <body>
@@ -420,6 +425,51 @@ const dataFlag=msg=>'<span class="data-flag" title="'+String(msg||'').replace(/"
 // Clean a string cell: blank / "nan" -> em dash.
 const cellStr=v=>{const s=(v==null?'':String(v)).trim();return (!s||s.toLowerCase()==='nan')?'—':s;};
 const hasFc=ret=>FCST_RETS.has(ret);
+
+// --- Year-on-year comparability -------------------------------------------------------
+// With ly_basis=database, LY is derived from the prior-year rows WE hold, so the comparison is
+// only as complete as our history. Two distinct distortions, in opposite directions:
+//   missing_ly : a period sold this year with no prior-year counterpart -> LY reads 0 -> growth
+//                is FLATTERED (Sephora is missing 2025 W2/W8/W14).
+//   no_ty      : a prior-year period with no counterpart this year -> it still lands in the LY
+//                total -> growth is UNDERSTATED (Goop's LY spans more months than TY does).
+// Neither is hidden: this drives an inline marker on the retailer name and a banner.
+function lyNote(ret){
+  const c=(M.ly_coverage||{})[ret];
+  if(!c)return '';
+  const bits=[];
+  if(c.missing_ly_n){
+    // When almost every current-year week lacks a counterpart the retailer simply had no
+    // meaningful prior year (MECCA launched Mar-2026, Selfridges Nov-2025). Listing 28 week
+    // numbers buries that; say it plainly instead.
+    const mostly=c.ty_weeks && (c.missing_ly_n/c.ty_weeks)>=0.8;
+    bits.push(mostly
+      ? 'effectively no '+(M.current_year-1)+' history to compare against ('+c.matched+' of '
+        +c.ty_weeks+' weeks have a prior-year counterpart), so year-on-year is not meaningful'
+      : 'no '+(M.current_year-1)+' data for W'+c.missing_ly.join(', W')
+        +(c.missing_ly_n>c.missing_ly.length?' +'+(c.missing_ly_n-c.missing_ly.length)+' more':'')
+        +' — last year reads zero for those weeks, so growth is overstated');
+  }
+  if(c.no_ty_n)bits.push((M.current_year-1)+' has W'+c.no_ty.join(', W')
+    +' with no '+M.current_year+' counterpart yet — those sit in the last-year total, so growth is understated');
+  return bits.join('. ');
+}
+function lyMarker(ret){
+  const n=lyNote(ret);
+  return n?' <span class="data-flag" title="'+n.replace(/"/g,'&quot;')+'">&#9888; LY partial</span>':'';
+}
+function lyBanner(){
+  if((M.ly_basis||'')!=='database')return '';
+  const sel=(state.retailers[0]==='All')?(M.retailers||[]):state.retailers;
+  const rows=sel.map(r=>({r,n:lyNote(r)})).filter(x=>x.n);
+  if(!rows.length)return '';
+  return '<div style="background:#FBF0D8;border:1px solid #E6C86B;border-radius:8px;padding:9px 13px;'
+    +'margin-bottom:14px;font-size:11.5px;color:#6B5410;line-height:1.55;">'
+    +'<strong>&#9888; Year-on-year is not like-for-like everywhere.</strong> Last year is taken from '
+    +'the history in this database, so it is only as complete as the reports we have received:<br>'
+    +rows.map(x=>'&middot; <strong>'+x.r+'</strong> — '+x.n).join('<br>')
+    +'</div>';
+}
 
 // Retailers in the current selection that have NOT reported through the week being
 // viewed. Their rows/cells read as 0 because no data has arrived — not because sales
@@ -906,6 +956,18 @@ function renderReturns(){
         {tip:'Damages divided by testers for the retailers that report net sales. Shows which is the bigger commercial problem.'});
   // Only meaningful where a rate exists at all; naming a "worst month" with no rate beside it
   // just raises a question it can't answer.
+  // Testers against ACTIVE-DOOR sales only, which the client asked for specifically. Testers
+  // are charged at physical doors, so total sell-through (79% of which is .com) is the wrong
+  // denominator — this uses the 49 placed doors, excluding the returns/non-placement bucket.
+  const doorYtd=(DATA.loc_sales||[])
+    .filter(d=>String(d.loc)!=='999999')
+    .reduce((a,d)=>a+(d.ytd||0),0);
+  const tesSeph=cur.filter(m=>m.ret==='Sephora').reduce((a,m)=>a+(m.tes||0),0);
+  if(doorYtd>0&&tesSeph>0){
+    h+=kpi('Testers % of active-door sales',((tesSeph/doorYtd)*100).toFixed(1)+'%',
+      fmtK(tesSeph)+' of '+fmtK(doorYtd)+' across '+fmtN((DATA.loc_sales||[]).filter(d=>String(d.loc)!=='999999').length)+' doors',
+      {tip:'Sephora tester chargebacks divided by sell-through at the placed (active) doors only — not total sales, which are mostly .com. Source: Sephora RA statements + the door-level feed.'});
+  }
   const worst=rated.filter(m=>m.dam_pct!=null).sort((a,b)=>b.dam_pct-a.dam_pct)[0];
   h+=kpi('Worst month',worst?_RET_MONTHS[worst.mo-1]+' '+worst.yr:'—',
         worst?(worst.dam_pct*100).toFixed(1)+'% damages of gross':'no net-sales denominator reported',
@@ -1069,6 +1131,7 @@ function drillKpi(key){
 function buildOverviewPage(){
   document.getElementById('page-overview').innerHTML=`
     <div id="eventCallout"></div>
+    <div id="ovLyNote"></div>
     <div class="table-container" style="margin-bottom:24px;">
       <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
         <span>Sell Through by Customer &mdash; Weekly Report</span>
@@ -1151,7 +1214,7 @@ function renderEmailTable(){
     if(retKey && !isSub && M.retailer_last_week && M.retailer_last_week[retKey] && M.retailer_last_week[retKey] < M.current_week){
       freshTag=' <span title="Latest week this retailer has reported. Weeks after this are pending, not missing." style="font-weight:400;font-size:10px;color:var(--text-muted);white-space:nowrap;">· thru W'+M.retailer_last_week[retKey]+'</span>';
     }
-    row+='<td style="'+nameStyle+subStyle+'">'+name+freshTag+'</td>';
+    row+='<td style="'+nameStyle+subStyle+'">'+name+freshTag+((retKey&&!isSub)?lyMarker(retKey):'')+'</td>';
     row+='<td class="r">'+fmtK(r.wk)+'</td>';
     row+='<td class="r">'+fmtK(r.mtd)+'</td>';
     row+=dolCell(r.wk,r.wk_ly,SEP_BORDER);
@@ -1303,14 +1366,14 @@ function renderCommentary(){
         Weekly Commentary
         <span style="font-size:11px;font-weight:400;color:var(--text-muted);">Week ${M.current_week} · ${M.current_month} · FY${M.current_year}</span>
       </span>
-      <a href="${NOTES_EDIT_URL}" target="_blank" onclick="event.stopPropagation()" style="font-size:11px;color:var(--accent);text-decoration:none;font-weight:500;">✏️ Edit Team Notes →</a>
+      ${NOTES_CSV_URL?`<a href="${NOTES_EDIT_URL}" target="_blank" onclick="event.stopPropagation()" style="font-size:11px;color:var(--accent);text-decoration:none;font-weight:500;">✏️ Edit Team Notes →</a>`:''}
     </div>
     <div id="commentaryBody" style="display:${isOpen?'flex':'none'};gap:24px;padding-top:4px;flex-wrap:wrap;">
       <div style="flex:1;min-width:280px;">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);font-weight:600;margin-bottom:8px;">Data Callouts</div>
         <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text);">${bulletHtml}</ul>
       </div>
-      <div style="flex:1;min-width:280px;border-left:1px solid var(--border);padding-left:24px;">
+      <div style="flex:1;min-width:280px;border-left:1px solid var(--border);padding-left:24px;display:${NOTES_CSV_URL?'block':'none'};">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);font-weight:600;">Team Notes</div>
           <button onclick="refreshCommentaryNotes()" style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;">↻ Refresh</button>
@@ -1493,6 +1556,7 @@ function renderEventCallout(){
 }
 
 function renderOverview(){
+  {const _l=document.getElementById('ovLyNote'); if(_l)_l.innerHTML=lyBanner();}
   renderEventCallout();
   renderEmailTable();
   renderCommentary();
@@ -1813,7 +1877,7 @@ function renderSKU(){
   kh+=kpi('Avg $ / SKU (YTD)',activeSKUs>0?fmtK(totalYTD/activeSKUs):'-',fmtN(activeSKUs)+' active',{click:"drillKpi('ytd')",tip:'Average YTD revenue per active SKU. Higher = more productive assortment.'});
   kh+=kpi('Forecast Accuracy',fcAcc,fmtK(totalYTD)+' actual / '+fmtK(totalFcst)+' plan',{click:"drillKpi('fc_d_ytd')",tip:'YTD actual sell-through as % of demand plan forecast (units × SRP). 100% = exactly on plan.'});
   document.getElementById('skuKpis').innerHTML=kh;
-  {const _sn=document.getElementById('skuStaleNote'); if(_sn)_sn.innerHTML=staleNote();}
+  {const _sn=document.getElementById('skuStaleNote'); if(_sn)_sn.innerHTML=staleNote()+lyBanner();}
 
   // Update chart titles with tooltips
   document.getElementById('skuTop20Title').innerHTML='Top 20 SKUs &mdash; '+periodLabel()+' &mdash; '+channelLabel()+' <span class="chart-hint">(click bar for detail)</span>'+chartTip('Top 20 selling SKUs ranked by sell-through ($) for the selected period across '+channelLabel()+'. Source: Sales Database + Shopify eCommerce.');
@@ -1970,7 +2034,7 @@ function renderRetailer(){
   const rs=isCompare?getRetSummary(firstRet):getAggSummary();
 
   document.getElementById('retScopeLabel').innerHTML='Showing: '+(state.retailers[0]==='All'?'All Retailers':state.retailers.join(', '))+' <span style="opacity:.65;">&middot; click to change</span>';
-  {const _rn=document.getElementById('retStaleNote'); if(_rn)_rn.innerHTML=staleNote();}
+  {const _rn=document.getElementById('retStaleNote'); if(_rn)_rn.innerHTML=staleNote()+lyBanner();}
 
   // KPIs
   let kh='';
@@ -2136,6 +2200,15 @@ function showOtherCollections(){
 // master lists them in (lightest to deepest), which is why the SKU level is not re-sorted
 // by value here.
 const _form=v=>{const t=(v==null?'':String(v)).trim();return(!t||t.toLowerCase()==='nan')?'':t;};
+const _clean=v=>{const t=(v==null?'':String(v)).trim();return(!t||t.toLowerCase()==='nan')?'':t;};
+// Shades keep the brand's own light-to-deep sequence (srank from their SKU master), NOT
+// alphabetical and NOT sales-ranked — they asked for this explicitly.
+const _shadeOrder=rows=>rows.slice().sort((a,b)=>{
+  const ra=a.srank==null?999:a.srank, rb=b.srank==null?999:b.srank;
+  if(ra!==rb)return ra-rb;
+  return String(_shadeLabel(a)).localeCompare(String(_shadeLabel(b)));
+});
+const _shadeLabel=s=>_clean(s.shade)||_clean(s.desc)||('SKU '+s.ic);
 function _catChildren(grpField,cat,skus){
   if(!skus.length)return [];
   const agg=(rows)=>{
@@ -2145,13 +2218,20 @@ function _catChildren(grpField,cat,skus){
     return {ty,ly,u,pct:delta(ty,ly)};
   };
   if(grpField==='cat'){
-    const byColl={};
-    skus.forEach(s=>{const k=(s.coll==null||s.coll==='nan')?'—':String(s.coll);(byColl[k]=byColl[k]||[]).push(s);});
-    return Object.entries(byColl)
-      .map(([name,rows])=>({name,level:1,...agg(rows),skus:rows}))
+    // Middle level is the PRODUCT, not the collection. The client's example is explicit:
+    // LIPS expands to Essential Lip Compact / Essential Lip REFILL / Smudge & Contour Lip
+    // Pencil / Soft Glass Lip Plumping Oil — compact and refill are distinct products, and
+    // grouping by collection would merge them into one 'Lip Compact' row.
+    const byProd={};
+    skus.forEach(s=>{
+      const k=_clean(s.prod)||_clean(s.coll)||'—';
+      (byProd[k]=byProd[k]||[]).push(s);
+    });
+    return Object.entries(byProd)
+      .map(([name,rows])=>({name,level:1,...agg(rows),skus:_shadeOrder(rows)}))
       .sort((a,b)=>b.ty-a.ty);
   }
-  return skus.map(s=>({name:s.desc||('SKU '+s.ic),level:1,ic:s.ic,form:_form(s.sub_cat),...agg([s])}));
+  return _shadeOrder(skus).map(s=>({name:_shadeLabel(s),level:1,ic:s.ic,form:_form(s.sub_cat),...agg([s])}));
 }
 
 function _catChildRows(gid,kids,grpField){

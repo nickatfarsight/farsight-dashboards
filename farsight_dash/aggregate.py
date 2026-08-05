@@ -229,6 +229,9 @@ def build_all(config, sales_df, sku_info, forecast_data, forecast_is_dollars,
         'forecast_retailers': forecast_retailers,
         'all_weeks': all_weeks_current,
         'week_greg': _build_week_calendar(week_date_map, current_year),
+        # How comparable each retailer's LY figure is (see ingest._ly_coverage)
+        'ly_coverage': config.get('_ly_coverage', {}),
+        'ly_basis': str(config.get('ly_basis', 'reported')).lower(),
         # week -> 4-4-5 month name for the CURRENT year, so the UI can roll weeks up to fiscal
         # months client-side. Both maps are keyed by (year, week); the UI only charts one year.
         'week_month_map': {int(k[1]): str(v) for k, v in (week_month_map or {}).items()
@@ -894,6 +897,11 @@ def _build_sku_data(sales_df, sku_info, forecast_data, fc2d, srp_map,
         coll = sd.get('coll', si.get('franchise', ''))
         cat = sd.get('cat', si.get('category', ''))
         sub_cat = sd.get('sub_cat', si.get('sub_category', 'nan'))
+        # Product and shade as separate values (+ the client's light-to-deep shade position),
+        # so the Category tab can nest Category > Product > Shade and order shades their way.
+        base_prod = si.get('base_product', '') or ''
+        shade = si.get('shade', '') or ''
+        srank = si.get('shade_rank', 999)
         nvc = sd.get('nvc', '')
         ls = sd.get('ls', '')
         lyr = sd.get('lyr', 0)
@@ -954,6 +962,7 @@ def _build_sku_data(sales_df, sku_info, forecast_data, fc2d, srp_map,
 
         skus.append({
             'ic': ic, 'desc': desc, 'coll': coll, 'cat': cat, 'sub_cat': sub_cat,
+            'prod': base_prod, 'shade': shade, 'srank': srank,
             'nvc': nvc, 'ls': ls, 'lyr': lyr, 'is_new': is_new,
             'aos': active, 's26': status, 'risk': risk, 'risk_pct': round(risk_pct, 2),
             'ytd': round(ytd_val, 2), 'ytd_bm': round(ytd_bm, 2), 'ytd_dc': round(ytd_dc, 2),

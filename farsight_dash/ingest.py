@@ -98,6 +98,13 @@ def read_sku_master(config, shared_dir):
             'srp': srp,
             'active': active,
             'is_new': is_new,
+            # Optional, read by fixed column name when present: the product and shade as
+            # separate values plus the client's light-to-deep shade position. Lets the UI nest
+            # Category > Product > Shade and order shades the way the brand lists them rather
+            # than alphabetically or by sales.
+            'base_product': safe_str(row.get('Base Product', '')) if 'Base Product' in df.columns else '',
+            'shade': safe_str(row.get('Shade', '')) if 'Shade' in df.columns else '',
+            'shade_rank': (int(num(row.get('Shade Rank', 999))) if 'Shade Rank' in df.columns else 999),
         }
 
     print(f"  {len(sku_info)} SKUs loaded ({time.time()-t:.1f}s)")
@@ -651,11 +658,27 @@ def backfill_ly(sales_df, config, week_month_map):
     ly_data = sales_df[sales_df['Year'] == ly_year]
     cy_rows = sales_df[sales_df['Year'] == current_year]
 
+    # ly_basis: 'reported' (default) trusts the retailer's own LY column where they supply one
+    # and only derives LY for retailers that don't. 'database' derives LY for EVERY retailer
+    # from the prior-year rows we hold, so one consistent, auditable mechanism applies across
+    # all channels. The trade-off is real and must be surfaced: derived LY inherits OUR
+    # coverage, so any prior-year week we never received counts as zero and flatters growth.
+    # `ly_coverage` below records exactly which periods are affected.
+    ly_basis = str(config.get('ly_basis', 'reported')).lower()
     retailers_needing_ly = []
-    for ret in cy_rows['Retailer'].unique():
-        ret_ly_sum = cy_rows.loc[cy_rows['Retailer'] == ret, 'LY Total Sales $'].sum()
-        if abs(ret_ly_sum) < 1.0:
-            retailers_needing_ly.append(ret)
+    if ly_basis == 'database':
+        retailers_needing_ly = list(cy_rows['Retailer'].unique())
+        # clear any retailer-reported LY so the derived values are not blended with it
+        for col in ('LY Total Sales $', 'LY B&M Sales $', 'LY Dotcom Sales $'):
+            if col in sales_df.columns:
+                sales_df.loc[sales_df['Year'] == current_year, col] = 0.0
+        print(f"  ly_basis=database — deriving LY for all {len(retailers_needing_ly)} retailers "
+              f"from our own {ly_year} rows")
+    else:
+        for ret in cy_rows['Retailer'].unique():
+            ret_ly_sum = cy_rows.loc[cy_rows['Retailer'] == ret, 'LY Total Sales $'].sum()
+            if abs(ret_ly_sum) < 1.0:
+                retailers_needing_ly.append(ret)
 
     ly_retailer_week_lookup = {}
     ly_retailer_month_lookup = {}
@@ -716,7 +739,48 @@ def backfill_ly(sales_df, config, week_month_map):
     else:
         print("  All retailers have LY data — no backfill needed")
 
+    _cw = None
+    try:
+        _cw = int(cy_rows.loc[cy_rows['TY Total Sales $'] != 0, 'Week'].max())
+    except Exception:
+        pass
+    config['_ly_coverage'] = _ly_coverage(sales_df, current_year, ly_year, ly_basis, _cw)
     return sales_df, retailers_needing_ly, ly_retailer_week_lookup, ly_retailer_month_lookup
+
+
+def _ly_coverage(sales_df, current_year, ly_year, ly_basis, current_week=None):
+    """Per-retailer audit of how comparable the LY figure actually is.
+
+    For each retailer: which periods have sales THIS year but no prior-year counterpart in our
+    data (so LY reads zero and growth is flattered), and which have prior-year data with no
+    this-year counterpart (excluded from the comparison entirely). Reported to the UI so a
+    year-on-year number is never shown as if it were complete when it isn't.
+    """
+    out = {}
+    if 'Week' not in sales_df.columns:
+        return out
+    ty = sales_df[(sales_df['Year'] == current_year) & (sales_df['TY Total Sales $'] != 0)]
+    ly = sales_df[(sales_df['Year'] == ly_year) & (sales_df['TY Total Sales $'] != 0)]
+    for ret in sorted(ty['Retailer'].dropna().unique()):
+        ty_wks = set(int(w) for w in ty.loc[ty['Retailer'] == ret, 'Week'].unique())
+        ly_wks = set(int(w) for w in ly.loc[ly['Retailer'] == ret, 'Week'].unique())
+        if not ty_wks:
+            continue
+        missing = sorted(ty_wks - ly_wks)     # TY week with no LY to compare against
+        # LY week with no TY counterpart. Only weeks up to the current week matter: later ones
+        # are simply still to come and are correctly outside a year-to-date comparison.
+        extra = sorted(w for w in (ly_wks - ty_wks)
+                       if current_week is None or w <= current_week)
+        matched = sorted(ty_wks & ly_wks)
+        out[str(ret)] = {
+            'basis': 'database' if ly_basis == 'database' else 'reported',
+            'ty_weeks': len(ty_wks), 'ly_weeks': len(ly_wks),
+            'matched': len(matched),
+            'missing_ly': missing[:20], 'missing_ly_n': len(missing),
+            'no_ty': extra[:20], 'no_ty_n': len(extra),
+            'complete': not missing,
+        }
+    return out
 
 
 # ─────────────────────────────────────────────────────────────

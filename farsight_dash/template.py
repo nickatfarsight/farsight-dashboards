@@ -5,6 +5,76 @@ import os, json
 from .core import DashEncoder, load_logo_b64, build_font_css
 
 
+def _theme_css(theme):
+    """Turn a `branding.theme` config block into a CSS override sheet.
+
+    Lets a client's dashboard match their own web identity without forking the template. Fara
+    Homidi's site (farahomidi.com) is Unica-77 throughout, #121212 on white with #F3F3F3 as the
+    only secondary tone, hairline rules, zero corner radius and no accent colour at all — the
+    default look here is warm, rounded and teal-accented, which reads as generic next to it.
+
+    Every key is optional; omitted keys leave the default in place.
+    """
+    if not theme:
+        return ''
+    g = lambda k, d=None: theme.get(k, d)
+    parts = []
+
+    var_map = [
+        ('bg', '--bg'), ('bg_alt', '--bg-warm'), ('card', '--bg-card'),
+        ('border', '--border'), ('border_light', '--border-light'),
+        ('text', '--text'), ('text_muted', '--text-muted'), ('text_light', '--text-light'),
+        ('accent', '--accent'), ('accent_dark', '--accent-dark'), ('accent_light', '--accent-light'),
+    ]
+    vars_out = [f'  {css}:{g(key)};' for key, css in var_map if g(key)]
+    if g('flat'):
+        vars_out += ['  --shadow:none;', '  --shadow-hover:none;']
+    if vars_out:
+        parts.append(':root{\n' + '\n'.join(vars_out) + '\n}')
+
+    # Variance colours. Saturated web green/red fight a restrained editorial palette, but the
+    # up/down signal still has to survive — so these are muted, not removed.
+    if g('pos') or g('neg'):
+        sem = []
+        if g('pos'):
+            sem += [f"  --green:{g('pos')};", f"  --green-bg:{g('pos_bg', 'rgba(79,122,82,.07)')};"]
+        if g('neg'):
+            sem += [f"  --red:{g('neg')};", f"  --red-bg:{g('neg_bg', 'rgba(164,69,62,.07)')};"]
+        parts.append(':root{\n' + '\n'.join(sem) + '\n}')
+        parts.append('.pos{color:var(--green);}.neg{color:var(--red);}')
+
+    if g('letter_spacing'):
+        parts.append(f"body{{letter-spacing:{g('letter_spacing')};}}")
+
+    radius = g('radius')
+    if radius is not None:
+        # radius is set inline on many elements, so this one needs !important
+        parts.append(
+            '.kpi-card,.chart-container,.table-container,.modal,.date-badge,.period-btn,.ms-btn,'
+            '.ms-pop,.badge,.data-flag,.scope-label,.region-tile,.search-box,.door-search,'
+            'button,select,input,textarea,table,th,td,'
+            # the WIP badge and gate button are inline-styled; target them explicitly
+            '#pw-gate div,#pw-gate input,#pw-gate button,.wip-badge'
+            f'{{border-radius:{radius} !important;}}')
+
+    if g('flat'):
+        parts.append(
+            # the gate is inline-styled with a gradient, so it needs an explicit override
+            '#pw-gate{background:var(--bg) !important;}'
+            '.topbar{box-shadow:none;border-bottom:1px solid var(--border);}'
+            '.header{background:var(--bg);}'
+            '.kpi-card,.chart-container,.table-container{box-shadow:none;border:1px solid var(--border-light);}'
+            '.kpi-card:hover,.chart-container:hover{box-shadow:none;}'
+            '.date-badge{background:transparent;color:var(--text);border:1px solid var(--border);font-weight:400;}')
+
+    if g('heading_tracking'):
+        parts.append(f".header h1,.brand-title{{letter-spacing:{g('heading_tracking')};font-weight:400;}}")
+    if g('table_head_tracking'):
+        parts.append(f"th{{letter-spacing:{g('table_head_tracking')};}}")
+
+    return '\n'.join(parts)
+
+
 def build_html(config, data, output_dir, shared_dir):
     """Inject data into HTML template and write output file.
 
@@ -44,11 +114,11 @@ def build_html(config, data, output_dir, shared_dir):
 
     # Optional "Work in Progress" draft badge (config: wip: true) — client-specific.
     wip = config.get('wip', False)
-    wip_gate = ('<div style="display:inline-block;background:#FBE5A0;color:#7A5C00;border:1px solid #E6C200;'
+    wip_gate = ('<div class="wip-badge" style="display:inline-block;background:#FBE5A0;color:#7A5C00;border:1px solid #E6C200;'
                 'border-radius:8px;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 14px;'
                 'margin-bottom:20px;text-transform:uppercase;">&#9888;&#65039; Work in Progress &middot; Draft</div>'
                 ) if wip else ''
-    wip_header = ('<span style="display:inline-block;background:#FBE5A0;color:#7A5C00;border:1px solid #E6C200;'
+    wip_header = ('<span class="wip-badge" style="display:inline-block;background:#FBE5A0;color:#7A5C00;border:1px solid #E6C200;'
                   'border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.8px;padding:2px 9px;'
                   'margin-left:14px;vertical-align:middle;text-transform:uppercase;">&#9888;&#65039; WIP &middot; Draft</span>'
                   ) if wip else ''
@@ -115,6 +185,8 @@ def build_html(config, data, output_dir, shared_dir):
             print("  ⚠ logo_in_header is set but branding.logo_file was not found in "
                   "shared_data/Branding — falling back to the text title.")
     html = html.replace('{{CLIENT_LOGO_B64}}', client_logo_b64)
+
+    html = html.replace('{{THEME_CSS}}', _theme_css(config['branding'].get('theme')))
 
     # Write output
     output_path = os.path.join(output_dir, 'index.html')
