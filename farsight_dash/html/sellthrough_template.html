@@ -410,7 +410,11 @@ const fmt=n=>n==null||isNaN(n)?'-':'$'+Math.round(n).toLocaleString();
 const fmtK=n=>{if(n==null||isNaN(n))return'-';if(Math.abs(n)>=1e6)return'$'+(n/1e6).toFixed(1)+'M';if(Math.abs(n)>=1e3)return'$'+(n/1e3).toFixed(1)+'K';return'$'+Math.round(n).toLocaleString();};
 const fmtN=n=>n==null||isNaN(n)?'-':Math.round(n).toLocaleString();
 const fmtPct=n=>{if(n==null||isNaN(n))return'-';return(n>=0?'+':'')+(n*100).toFixed(1)+'%';};
-const delta=(a,b)=>(!b||b===0)?null:(a-b)/Math.abs(b);
+// Percent change is only interpretable against a POSITIVE base. A negative prior-year figure
+// happens for real (Sephora B&M in the weeks before doors opened in Aug-2025 is net negative:
+// returns with no sales behind them), and (a-b)/|b| would render that as a confident-looking
+// +796%. Return null so the dollar change still shows and the % reads as not-applicable.
+const delta=(a,b)=>(!b||b<=0)?null:(a-b)/b;
 // Yellow "needs data" flag for sections/columns we don't have source data for yet.
 const dataFlag=msg=>'<span class="data-flag" title="'+String(msg||'').replace(/"/g,'&quot;')+'">⚠ needs data</span>';
 // Clean a string cell: blank / "nan" -> em dash.
