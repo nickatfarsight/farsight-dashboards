@@ -431,6 +431,13 @@ def _theme_css(theme):
             'color:#fff !important;}'
             '.csv-dl-btn{transition:all .15s ease-in;}'
             f'.csv-dl-btn:hover{{background:{tint} !important;}}'
+            # The review-notes Save button is generated inline with the accent fill — the
+            # last filled slab. Same hairline treatment, reached by its inline declaration.
+            '[style*="background:var(--accent"]{background:transparent !important;'
+            'color:var(--text) !important;border:1px solid var(--text) !important;'
+            'transition:all .15s ease-in;}'
+            '[style*="background:var(--accent"]:hover{background:var(--text) !important;'
+            'color:#fff !important;}'
             # ── Editorial numerals: the figure is the headline, set large and light the way
             # an editorial page would, with the weight in the datum not the chrome.
             '.kpi-value{font-size:34px;font-weight:400;letter-spacing:0;}'
