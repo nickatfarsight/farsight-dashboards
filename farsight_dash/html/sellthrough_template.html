@@ -1943,7 +1943,7 @@ function renderSKU(){
     {l:'#',k:'rank',t:'num',a:'r'},{l:'Item',k:'ic',t:'num',a:''},{l:'SKU',k:'desc',t:'str',a:''},
     {l:'Category',k:'cat',t:'str',a:''},{l:'N/C',k:'nvc',t:'str',a:''},
     {l:'Period $',k:'pv_ty',t:'num',a:'r'},{l:state.comparison==='fc'?'Fcst $':'LY $',k:'pv_comp',t:'num',a:'r'},{l:'% Chg',k:'pv_pct',t:'num',a:'r'},
-    {l:'YTD $',k:'ytd',t:'num',a:'r'},{l:'Fcst YTD',k:'fc_d_ytd',t:'num',a:'r'},{l:'L4W $',k:'l4w',t:'num',a:'r'},
+    {l:'YTD $',k:'ytd',t:'num',a:'r'},{l:'YTD Units',k:'ytd_u',t:'num',a:'r'},{l:'Fcst YTD',k:'fc_d_ytd',t:'num',a:'r'},{l:'L4W $',k:'l4w',t:'num',a:'r'},
   ];
   cols.forEach((c,i)=>{th+=`<th class="${c.a}" onclick="sortTable('skuTable',${i},'${c.t}')">${c.l}<span class="sort-arrow">&#9650;</span></th>`;});
   th+='</tr></thead><tbody>';
@@ -1959,6 +1959,7 @@ function renderSKU(){
     th+=`<td class="r" data-v="${cv||0}">${cv!=null?fmtK(cv):'N/A'}</td>`;
     th+=`<td class="r ${pctCls}" data-v="${pct||0}">${fmtPct(pct)}</td>`;
     th+=`<td class="r" data-v="${s.ytd}">${fmtK(s.ytd)}</td>`;
+    th+=`<td class="r" data-v="${s.ytd_u||0}">${fmtN(s.ytd_u||0)}</td>`;
     th+=`<td class="r" data-v="${s.fc_d_ytd}">${s.fc_d_ytd>0?fmtK(s.fc_d_ytd):'N/A'}</td>`;
     th+=`<td class="r" data-v="${s.l4w}">${fmtK(s.l4w)}</td>`;
     th+='</tr>';
@@ -1984,6 +1985,7 @@ function showSKUDetail(ic){
   let h=`<div class="modal-chart"><canvas id="modalChart"></canvas></div>`;
   h+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0 16px;">`;
   h+=`<div class="kpi-card" style="padding:12px;cursor:default;"><div class="kpi-label">YTD $</div><div class="kpi-value" style="font-size:18px;">${fmtK(sku.ytd)}</div></div>`;
+  h+=`<div class="kpi-card" style="padding:12px;cursor:default;"><div class="kpi-label">YTD Units</div><div class="kpi-value" style="font-size:18px;">${fmtN(sku.ytd_u||0)}</div></div>`;
   h+=`<div class="kpi-card" style="padding:12px;cursor:default;"><div class="kpi-label">YTD Forecast</div><div class="kpi-value" style="font-size:18px;">${sku.fc_d_ytd>0?fmtK(sku.fc_d_ytd):'N/A'}</div></div>`;
   h+=`<div class="kpi-card" style="padding:12px;cursor:default;"><div class="kpi-label">Avg Weekly $</div><div class="kpi-value" style="font-size:18px;">${fmtK(sku.avg_wk)}</div></div>`;
   if(sku.risk){const rc=sku.risk==='critical'?'var(--red)':sku.risk==='warning'?'var(--yellow)':sku.risk==='over'?'var(--blue)':'var(--green)';
