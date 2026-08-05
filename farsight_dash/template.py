@@ -57,15 +57,29 @@ def _theme_css(theme):
             '#pw-gate div,#pw-gate input,#pw-gate button,.wip-badge'
             f'{{border-radius:{radius} !important;}}')
 
-    if g('flat'):
+    # A brand ground colour for the header band / splash, with the data canvas left neutral.
+    # farahomidi.com uses its blue as a full-page ground on interior pages; a dashboard still
+    # needs a neutral field behind dense figures, so the brand colour lives in the chrome.
+    if g('header_bg'):
         parts.append(
-            # the gate is inline-styled with a gradient, so it needs an explicit override
-            '#pw-gate{background:var(--bg) !important;}'
-            '.topbar{box-shadow:none;border-bottom:1px solid var(--border);}'
-            '.header{background:var(--bg);}'
-            '.kpi-card,.chart-container,.table-container{box-shadow:none;border:1px solid var(--border-light);}'
-            '.kpi-card:hover,.chart-container:hover{box-shadow:none;}'
-            '.date-badge{background:transparent;color:var(--text);border:1px solid var(--border);font-weight:400;}')
+            f".header{{background:{g('header_bg')} !important;}}"
+            f"#pw-gate{{background:{g('header_bg')} !important;}}"
+            ".header .subtitle{color:rgba(0,0,0,.62);}"
+            ".topbar{border-bottom:1px solid rgba(0,0,0,.12);}")
+
+    if g('flat'):
+        flat = [
+            '.topbar{box-shadow:none;border-bottom:1px solid var(--border);}',
+            '.kpi-card,.chart-container,.table-container{box-shadow:none;border:1px solid var(--border-light);}',
+            '.kpi-card:hover,.chart-container:hover{box-shadow:none;}',
+            '.date-badge{background:transparent;color:var(--text);border:1px solid var(--border);font-weight:400;}',
+        ]
+        # Don't flatten the header/gate to the page background when a brand ground is set —
+        # header_bg is emitted above and this block would otherwise override it.
+        if not g('header_bg'):
+            flat.insert(0, '#pw-gate{background:var(--bg) !important;}')
+            flat.insert(1, '.header{background:var(--bg);}')
+        parts.append(''.join(flat))
 
     if g('heading_tracking'):
         parts.append(f".header h1,.brand-title{{letter-spacing:{g('heading_tracking')};font-weight:400;}}")
