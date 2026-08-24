@@ -598,9 +598,13 @@ function describe(el){
   // Name the exact thing clicked, in the order a person would recognise it.
   // A container (a whole table or card) has no useful name of its own — its text is every
   // cell concatenated — so say nothing and let the section title carry it.
-  try{ if(el.querySelectorAll && el.querySelectorAll('*').length>6) return ''; }catch(e){}
+  var tg=(el.tagName||'').toLowerCase();
+  // ...but a <select> is a control, not a container — its "children" are just its options.
+  if(['select','input','textarea','button','a','img','canvas','option','th','td'].indexOf(tg)<0){
+    try{ if(el.querySelectorAll && el.querySelectorAll('*').length>6) return ''; }catch(e){}
+  }
   var a=el.getAttribute?(el.getAttribute('aria-label')||el.getAttribute('title')||el.getAttribute('alt')||''):'';
-  var tag=(el.tagName||'').toLowerCase();
+  var tag=tg;
   if(tag==='img')  return 'image'+(a?' "'+a+'"':'');
   if(tag==='canvas')return 'the chart';
   var own=(el.textContent||'').trim().replace(/\s+/g,' ');
