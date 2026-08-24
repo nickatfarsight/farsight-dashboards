@@ -596,6 +596,9 @@ function regionOf(el){
 }
 function describe(el){
   // Name the exact thing clicked, in the order a person would recognise it.
+  // A container (a whole table or card) has no useful name of its own — its text is every
+  // cell concatenated — so say nothing and let the section title carry it.
+  try{ if(el.querySelectorAll && el.querySelectorAll('*').length>6) return ''; }catch(e){}
   var a=el.getAttribute?(el.getAttribute('aria-label')||el.getAttribute('title')||el.getAttribute('alt')||''):'';
   var tag=(el.tagName||'').toLowerCase();
   if(tag==='img')  return 'image'+(a?' "'+a+'"':'');
@@ -623,7 +626,7 @@ function sectionOf(el){
   while(n&&n!==document.body&&hop<7){
     if(n.classList&&(n.classList.contains('chart-container')||n.classList.contains('table-container')||n.classList.contains('kpi-card'))){
       var t=n.querySelector('.chart-title,.table-title,.kpi-label');
-      if(t)return titleText(t)+' — '+describe(el);
+      if(t){var d=describe(el); return titleText(t)+(d?' — '+d:'');}
     }
     n=n.parentElement; hop++;
   }
@@ -631,9 +634,9 @@ function sectionOf(el){
   // falling through to a useless placeholder — a note reading "(page)" cannot be acted on and
   // would mean going back to ask, which is the whole thing this is meant to avoid.
   var reg=regionOf(el);
-  if(reg)return reg+' — '+describe(el);
-  var head=nearestHeading(el);
-  return (head?head+' — ':'')+describe(el);
+  if(reg){var dr=describe(el); return reg+(dr?' — '+dr:'');}
+  var head=nearestHeading(el), dh=describe(el);
+  return (head&&dh)?head+' — '+dh:(head||dh||'page');
 }
 function anchorFor(el){
   var n=el.closest?el.closest('.chart-container,.table-container,.kpi-card'):null;
@@ -725,7 +728,7 @@ function digest(){
       out.push('  '+(i+1)+'. '+n.t);
       var meta=[]; if(n.section)meta.push(n.section); if(n.filters)meta.push(n.filters);
       if(meta.length)out.push('     ['+meta.join('  ·  ')+']');
-      if(n.at)out.push('     (' + (n.where?n.where+' · ':'') + n.at + ')');
+
       if(n.who)out.push('     — '+n.who+', '+n.when);
     });
   });
