@@ -579,7 +579,10 @@ function filters(){
 }
 function titleText(t){
   var c=t.cloneNode(true);
-  Array.prototype.forEach.call(c.querySelectorAll('.chart-hint,.chart-tip,.has-tooltip .tip,.data-flag'),
+  // Titles carry more than the title: a hint span, a tooltip, and in the weekly report the
+  // Recap/CSV buttons and a 'Week 34 · Aug · FY2026' stamp all live inside the same heading.
+  Array.prototype.forEach.call(c.querySelectorAll(
+      '.chart-hint,.chart-tip,.has-tooltip .tip,.data-flag,button,[onclick],.csv-dl-btn'),
     function(x){x.parentNode.removeChild(x);});
   return (c.textContent||'').trim().replace(/\s+/g,' ').slice(0,80);
 }
