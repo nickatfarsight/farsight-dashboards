@@ -3784,7 +3784,8 @@ buildSKUMasterPage();
 buildDoorMasterPage();
 buildCalendarPage();
 buildRetailerMultiSelect();
-initReviewNotes();
+if(!(window.FEEDBACK_CFG&&window.FEEDBACK_CFG.enabled))initReviewNotes();
+{{FEEDBACK_JS}}
 renderOverview();
 _attachCsvButtons();
 

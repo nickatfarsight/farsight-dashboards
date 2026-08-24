@@ -454,6 +454,251 @@ def _theme_css(theme):
     return '\n'.join(parts)
 
 
+def _feedback_js(cfg):
+    """Client-side "click anything and leave a note" layer (config: `feedback`).
+
+    Why this exists: the team reviews the dashboard together and then has to hand-compile a
+    list of fixes into an email, which is slow for them and arrives without context — we get
+    "the retailer chart looks wrong" with no idea which week, filter or tab they were on.
+
+    This lets them click the thing itself. Each note automatically captures the tab, the
+    section heading it was pinned to, and the live filter state (period / retailer / as-of
+    week), so a one-line note is actionable. Notes live in localStorage, so a review session
+    survives refreshes and they can send the whole batch in one go.
+
+    Deliberately backend-free: the dashboard is a static file behind a password, and asking
+    this team to sign into a bug tracker would guarantee it never gets used. Sending copies a
+    formatted digest to the clipboard AND opens a pre-filled email, so it works with zero
+    setup; set `feedback.endpoint` to POST somewhere instead and it becomes a single click.
+
+    Returns '' when the client has no `feedback` block, so other clients are untouched.
+    """
+    if not cfg or not cfg.get('enabled'):
+        return ''
+    conf = {
+        'enabled': True,
+        'to': cfg.get('to', ''),
+        'cc': cfg.get('cc', ''),
+        'subject': cfg.get('subject', 'Dashboard feedback'),
+        'label': cfg.get('label', 'Add a note'),
+        'endpoint': cfg.get('endpoint', ''),
+        'intro': cfg.get('intro', ''),
+    }
+    return "window.FEEDBACK_CFG=%s;\n%s" % (json.dumps(conf), _FEEDBACK_BODY)
+
+
+_FEEDBACK_BODY = r"""
+(function(){
+var CFG=window.FEEDBACK_CFG||{}; if(!CFG.enabled)return;
+var LS='fb_notes_'+((window.M&&M.client_name)||'x').toLowerCase().replace(/[^a-z0-9]/g,'');
+var LSU='fb_who_'+LS;
+function load(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return[]}}
+function save(n){try{localStorage.setItem(LS,JSON.stringify(n))}catch(e){}}
+function who(){try{return localStorage.getItem(LSU)||''}catch(e){return''}}
+function setWho(v){try{localStorage.setItem(LSU,v)}catch(e){}}
+var notes=load(), picking=false;
+
+/* ---------- styles: inherit the client theme, no new colour decisions ---------- */
+var css=document.createElement('style');
+css.textContent=
+"#fbBtn{position:fixed;right:22px;bottom:22px;z-index:9000;background:var(--bg-card,#fff);color:var(--text,#121212);"
++"border:1px solid var(--text,#121212);padding:10px 16px;font:inherit;font-size:13px;cursor:pointer;display:flex;"
++"align-items:center;gap:9px;transition:all .15s ease-in;}"
++"#fbBtn:hover{background:var(--text,#121212);color:#fff;}"
++"#fbBtn .n{min-width:19px;height:19px;line-height:19px;text-align:center;font-size:11px;"
++"background:var(--text,#121212);color:#fff;padding:0 5px;}"
++"#fbBtn:hover .n{background:#fff;color:var(--text,#121212);}"
++"#fbBtn.on{background:var(--text,#121212);color:#fff;}"
++"#fbPanel{position:fixed;top:0;right:0;bottom:0;width:400px;max-width:92vw;background:var(--bg-card,#fff);"
++"border-left:1px solid var(--text,#121212);z-index:9100;display:none;flex-direction:column;}"
++"#fbPanel.open{display:flex;}"
++"#fbPanel header{padding:20px 22px;border-bottom:1px solid var(--border,#ddd);display:flex;justify-content:space-between;align-items:center;}"
++"#fbPanel h3{font-size:15px;font-weight:400;margin:0;}"
++"#fbList{flex:1;overflow:auto;padding:6px 22px 22px;}"
++"#fbPanel footer{padding:16px 22px;border-top:1px solid var(--border,#ddd);display:flex;gap:10px;}"
++".fb-x{background:none;border:none;font-size:20px;line-height:1;cursor:pointer;color:var(--text-muted,#777);padding:0 4px;}"
++".fb-item{border-top:1px solid var(--border,#ddd);padding:14px 0;font-size:12.5px;}"
++".fb-item .ctx{color:var(--text-muted,#777);font-size:11px;margin-bottom:5px;line-height:1.45;}"
++".fb-item .txt{white-space:pre-wrap;line-height:1.5;}"
++".fb-item .act{margin-top:7px;}"
++".fb-item .act button{background:none;border:none;color:var(--text-muted,#777);font-size:11px;cursor:pointer;"
++"padding:0;margin-right:14px;text-decoration:underline;}"
++".fb-btn{font:inherit;font-size:12.5px;padding:9px 15px;border:1px solid var(--text,#121212);"
++"background:transparent;color:var(--text,#121212);cursor:pointer;transition:all .15s ease-in;}"
++".fb-btn:hover{background:var(--text,#121212);color:#fff;}"
++".fb-btn.pri{background:var(--text,#121212);color:#fff;}"
++".fb-btn.pri:hover{opacity:.85;}"
++"body.fb-pick *{cursor:crosshair !important;}"
++"body.fb-pick #fbBtn,body.fb-pick #fbBtn *{cursor:pointer !important;}"
++".fb-hi{outline:2px solid var(--text,#121212) !important;outline-offset:2px;background:rgba(163,229,247,.22) !important;}"
++"#fbTip{position:fixed;left:50%;transform:translateX(-50%);top:0;z-index:9200;background:var(--text,#121212);"
++"color:#fff;font-size:12.5px;padding:9px 18px;display:none;}"
++"body.fb-pick #fbTip{display:block;}"
++"#fbCompose{position:absolute;z-index:9300;width:330px;max-width:92vw;background:var(--bg-card,#fff);"
++"border:1px solid var(--text,#121212);padding:14px;display:none;}"
++"#fbCompose textarea{width:100%;min-height:88px;font:inherit;font-size:12.5px;padding:9px;box-sizing:border-box;"
++"border:1px solid var(--border,#ccc);resize:vertical;}"
++"#fbCompose .ctx{font-size:11px;color:var(--text-muted,#777);margin-bottom:8px;line-height:1.45;}"
++"#fbCompose .row{display:flex;gap:8px;justify-content:flex-end;margin-top:9px;}"
++".fb-pin{position:absolute;z-index:8000;width:19px;height:19px;background:var(--text,#121212);color:#fff;"
++"font-size:10px;line-height:19px;text-align:center;cursor:pointer;}"
++"@media print{#fbBtn,#fbPanel,#fbCompose,.fb-pin,#fbTip{display:none !important;}}";
+document.head.appendChild(css);
+
+/* ---------- chrome ---------- */
+var btn=document.createElement('button'); btn.id='fbBtn';
+btn.innerHTML='<span>'+(CFG.label||'Add a note')+'</span><span class="n" id="fbN">0</span>';
+document.body.appendChild(btn);
+var tip=document.createElement('div'); tip.id='fbTip';
+tip.textContent='Click anything on the page to attach a note — press Esc to cancel';
+document.body.appendChild(tip);
+var panel=document.createElement('div'); panel.id='fbPanel';
+panel.innerHTML='<header><h3>Notes for Farsight</h3><button class="fb-x" id="fbClose">&times;</button></header>'
+ +'<div id="fbList"></div>'
+ +'<footer><button class="fb-btn pri" id="fbSend" style="flex:1;">Send to Farsight</button>'
+ +'<button class="fb-btn" id="fbClear">Clear all</button></footer>';
+document.body.appendChild(panel);
+var comp=document.createElement('div'); comp.id='fbCompose';
+comp.innerHTML='<div class="ctx" id="fbCtx"></div><textarea id="fbTxt" placeholder="What is wrong, or what would you like instead?"></textarea>'
+ +'<div class="row"><button class="fb-btn" id="fbCancel">Cancel</button><button class="fb-btn pri" id="fbSave">Save note</button></div>';
+document.body.appendChild(comp);
+
+/* ---------- context capture: the whole point ---------- */
+function tabName(){var a=document.querySelector('.nav-tab.active');return a?a.textContent.trim():'';}
+function filters(){
+  var out=[];
+  var p=document.querySelector('.period-btn.active'); if(p)out.push('Period '+p.textContent.trim());
+  var r=document.getElementById('msRetLabel'); if(r&&r.textContent.trim())out.push(r.textContent.trim());
+  var w=document.getElementById('fAsOfWeek'); if(w&&w.selectedIndex>=0&&w.options[w.selectedIndex])out.push(w.options[w.selectedIndex].text.trim());
+  return out.join(' · ');
+}
+function sectionOf(el){
+  var n=el, hop=0;
+  while(n&&n!==document.body&&hop<7){
+    if(n.classList&&(n.classList.contains('chart-container')||n.classList.contains('table-container')||n.classList.contains('kpi-card'))){
+      var t=n.querySelector('.chart-title,.table-title,.kpi-label');
+      if(t)return t.textContent.trim().replace(/\s+/g,' ').slice(0,80);
+    }
+    n=n.parentElement; hop++;
+  }
+  var h=el.closest?el.closest('.chart-container,.table-container,.kpi-card,table,canvas'):null;
+  if(h){var tt=h.querySelector&&h.querySelector('.chart-title,.table-title,.kpi-label');if(tt)return tt.textContent.trim().slice(0,80);}
+  return (el.textContent||'').trim().replace(/\s+/g,' ').slice(0,60)||'(page)';
+}
+function anchorFor(el){
+  var n=el.closest?el.closest('.chart-container,.table-container,.kpi-card'):null;
+  return n||el;
+}
+
+/* ---------- picking ---------- */
+var lastHi=null, pending=null;
+function clearHi(){if(lastHi){lastHi.classList.remove('fb-hi');lastHi=null;}}
+document.addEventListener('mouseover',function(e){
+  if(!picking)return; if(btn.contains(e.target)||comp.contains(e.target))return;
+  clearHi(); var a=anchorFor(e.target); if(a&&a!==document.body){a.classList.add('fb-hi');lastHi=a;}
+});
+document.addEventListener('click',function(e){
+  if(!picking)return;
+  if(btn.contains(e.target)||comp.contains(e.target))return;
+  e.preventDefault(); e.stopPropagation();
+  var a=anchorFor(e.target);
+  pending={tab:tabName(),section:sectionOf(e.target),filters:filters()};
+  var r=(a&&a.getBoundingClientRect)?a.getBoundingClientRect():{left:80,bottom:120};
+  comp.style.left=Math.max(12,Math.min(window.innerWidth-345,r.left+window.scrollX))+'px';
+  comp.style.top=(r.bottom+window.scrollY+9)+'px';
+  document.getElementById('fbCtx').textContent=pending.tab+(pending.section?' — '+pending.section:'')+(pending.filters?'  ·  '+pending.filters:'');
+  document.getElementById('fbTxt').value='';
+  comp.style.display='block'; document.getElementById('fbTxt').focus();
+  setPick(false);
+},true);
+document.addEventListener('keydown',function(e){if(e.key==='Escape'){setPick(false);comp.style.display='none';}});
+function setPick(on){picking=on;document.body.classList.toggle('fb-pick',on);btn.classList.toggle('on',on);if(!on)clearHi();}
+
+/* ---------- save / render ---------- */
+document.getElementById('fbSave').onclick=function(){
+  var t=document.getElementById('fbTxt').value.trim(); if(!t){comp.style.display='none';return;}
+  var w=who(); if(!w){w=(prompt('Your name (so we know who flagged it):')||'').trim();if(w)setWho(w);}
+  notes.push({t:t,who:w,tab:pending.tab,section:pending.section,filters:pending.filters,
+              when:new Date().toLocaleString()});
+  save(notes); comp.style.display='none'; render();
+};
+document.getElementById('fbCancel').onclick=function(){comp.style.display='none';};
+btn.onclick=function(){ if(picking){setPick(false);return;} panel.classList.add('open'); render(); };
+document.getElementById('fbClose').onclick=function(){panel.classList.remove('open');};
+document.getElementById('fbClear').onclick=function(){
+  if(!notes.length)return;
+  if(confirm('Delete all '+notes.length+' notes? This cannot be undone.')){notes=[];save(notes);render();}
+};
+function render(){
+  document.getElementById('fbN').textContent=notes.length;
+  var L=document.getElementById('fbList');
+  if(!notes.length){
+    L.innerHTML='<p style="font-size:12.5px;color:var(--text-muted,#777);line-height:1.6;padding-top:16px;">'
+      +'No notes yet.<br><br>Click <b>'+(CFG.label||'Add a note')+'</b>, then click whatever looks wrong — a chart, a number, a table. '
+      +'We\'ll capture which tab and which filters you were on, so you only have to type the point itself.</p>';
+    return;
+  }
+  var h='';
+  notes.forEach(function(n,i){
+    h+='<div class="fb-item"><div class="ctx">'+esc(n.tab)+(n.section?' — '+esc(n.section):'')
+      +(n.filters?'<br>'+esc(n.filters):'')+'<br>'+esc(n.who||'')+(n.who?' · ':'')+esc(n.when)+'</div>'
+      +'<div class="txt">'+esc(n.t)+'</div>'
+      +'<div class="act"><button data-i="'+i+'" class="fbDel">Delete</button></div></div>';
+  });
+  L.innerHTML=h;
+  Array.prototype.forEach.call(L.querySelectorAll('.fbDel'),function(b){
+    b.onclick=function(){notes.splice(+b.getAttribute('data-i'),1);save(notes);render();};
+  });
+}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+/* ---------- digest + send ---------- */
+function digest(){
+  var by={};
+  notes.forEach(function(n){(by[n.tab]=by[n.tab]||[]).push(n);});
+  var out=[(CFG.intro||'Dashboard feedback')+' — '+notes.length+' note'+(notes.length===1?'':'s')+'\n'];
+  Object.keys(by).forEach(function(tab){
+    out.push('\n'+(tab||'(page)').toUpperCase());
+    by[tab].forEach(function(n,i){
+      out.push('  '+(i+1)+'. '+n.t);
+      var meta=[]; if(n.section)meta.push(n.section); if(n.filters)meta.push(n.filters);
+      if(meta.length)out.push('     ['+meta.join('  ·  ')+']');
+      if(n.who)out.push('     — '+n.who+', '+n.when);
+    });
+  });
+  return out.join('\n');
+}
+document.getElementById('fbSend').onclick=function(){
+  if(!notes.length){alert('No notes to send yet.');return;}
+  var body=digest();
+  if(CFG.endpoint){
+    fetch(CFG.endpoint,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:body})
+      .then(function(){alert('Sent — thank you. '+notes.length+' note'+(notes.length===1?'':'s')+' delivered.');})
+      .catch(function(){fallback(body);});
+    return;
+  }
+  fallback(body);
+};
+function fallback(body){
+  var done=function(){
+    var sub=encodeURIComponent(CFG.subject||'Dashboard feedback');
+    var href='mailto:'+encodeURIComponent(CFG.to||'')+'?subject='+sub
+             +(CFG.cc?'&cc='+encodeURIComponent(CFG.cc):'')
+             +'&body='+encodeURIComponent(body.length>1500?body.slice(0,1500)+'\n\n[…full list copied to your clipboard — paste here]':body);
+    window.location.href=href;
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(body).then(function(){
+      alert('Copied all '+notes.length+' notes to your clipboard, and opening an email now.\n\nIf the email does not open, just paste into a new one.');
+      done();
+    },done);
+  } else { done(); }
+}
+render();
+})();
+"""
+
+
 def build_html(config, data, output_dir, shared_dir):
     """Inject data into HTML template and write output file.
 
@@ -569,6 +814,7 @@ def build_html(config, data, output_dir, shared_dir):
 
     chart_palette = config['branding'].get('chart_palette')
     html = _apply_chart_remap(html, chart_palette)
+    html = html.replace('{{FEEDBACK_JS}}', _feedback_js(config.get('feedback')))
     html = html.replace('{{CHART_PALETTE_JS}}', _chart_palette_js(chart_palette))
 
     # Write output
