@@ -563,6 +563,7 @@ panel.innerHTML='<header><h3>Notes for Farsight</h3><button class="fb-x" id="fbC
 document.body.appendChild(panel);
 var comp=document.createElement('div'); comp.id='fbCompose';
 comp.innerHTML='<div class="ctx" id="fbCtx"></div><textarea id="fbTxt" placeholder="What is wrong, or what would you like instead?"></textarea>'
+ +'<input id="fbWho" placeholder="Your name" style="width:100%;font:inherit;font-size:12px;padding:7px 9px;margin-top:7px;box-sizing:border-box;border:1px solid var(--border,#ccc);">'
  +'<div class="row"><button class="fb-btn" id="fbCancel">Cancel</button><button class="fb-btn pri" id="fbSave">Save note</button></div>';
 document.body.appendChild(comp);
 
@@ -617,6 +618,7 @@ document.addEventListener('click',function(e){
   comp.style.top=(r.bottom+window.scrollY+9)+'px';
   document.getElementById('fbCtx').textContent=pending.tab+(pending.section?' — '+pending.section:'')+(pending.filters?'  ·  '+pending.filters:'');
   document.getElementById('fbTxt').value='';
+  var wf=document.getElementById('fbWho'); wf.value=who(); wf.style.display=who()?'none':'block';
   comp.style.display='block'; document.getElementById('fbTxt').focus();
   setPick(false);
 },true);
@@ -626,7 +628,9 @@ function setPick(on){picking=on;document.body.classList.toggle('fb-pick',on);btn
 /* ---------- save / render ---------- */
 document.getElementById('fbSave').onclick=function(){
   var t=document.getElementById('fbTxt').value.trim(); if(!t){comp.style.display='none';return;}
-  var w=who(); if(!w){w=(prompt('Your name (so we know who flagged it):')||'').trim();if(w)setWho(w);}
+  // Asked inline rather than via prompt(): a modal on first save is jarring, and prompt is
+  // blocked outright in some embedded browsers, which silently lost the note.
+  var w=(document.getElementById('fbWho').value||'').trim(); if(w)setWho(w); else w=who();
   notes.push({t:t,who:w,tab:pending.tab,section:pending.section,filters:pending.filters,
               when:new Date().toLocaleString()});
   save(notes); comp.style.display='none'; render();
