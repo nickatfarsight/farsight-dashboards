@@ -477,6 +477,7 @@ def _feedback_js(cfg):
         return ''
     conf = {
         'enabled': True,
+        'slug': cfg.get('slug', ''),
         'to': cfg.get('to', ''),
         'cc': cfg.get('cc', ''),
         'subject': cfg.get('subject', 'Dashboard feedback'),
@@ -490,7 +491,7 @@ def _feedback_js(cfg):
 _FEEDBACK_BODY = r"""
 (function(){
 var CFG=window.FEEDBACK_CFG||{}; if(!CFG.enabled)return;
-var LS='fb_notes_'+((window.M&&M.client_name)||'x').toLowerCase().replace(/[^a-z0-9]/g,'');
+var LS='fb_notes_'+(CFG.slug||'x');
 var LSU='fb_who_'+LS;
 function load(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return[]}}
 function save(n){try{localStorage.setItem(LS,JSON.stringify(n))}catch(e){}}
@@ -830,7 +831,10 @@ def build_html(config, data, output_dir, shared_dir):
 
     chart_palette = config['branding'].get('chart_palette')
     html = _apply_chart_remap(html, chart_palette)
-    html = html.replace('{{FEEDBACK_JS}}', _feedback_js(config.get('feedback')))
+    fb_cfg = dict(config.get('feedback') or {})
+    if fb_cfg:
+        fb_cfg.setdefault('slug', config.get('client_slug', ''))
+    html = html.replace('{{FEEDBACK_JS}}', _feedback_js(fb_cfg))
     html = html.replace('{{CHART_PALETTE_JS}}', _chart_palette_js(chart_palette))
 
     # Write output
