@@ -583,18 +583,54 @@ function titleText(t){
     function(x){x.parentNode.removeChild(x);});
   return (c.textContent||'').trim().replace(/\s+/g,' ').slice(0,80);
 }
+function regionOf(el){
+  if(!el.closest)return '';
+  if(el.closest('.modal'))return 'Pop-up';
+  if(el.closest('.nav-tabs'))return 'Tab bar';
+  if(el.closest('.global-filters,.period-toggle,.ms-wrap,.filter-bar,.door-filters'))return 'Filters';
+  if(el.closest('.header,.topbar'))return 'Header';
+  return '';
+}
+function describe(el){
+  // Name the exact thing clicked, in the order a person would recognise it.
+  var a=el.getAttribute?(el.getAttribute('aria-label')||el.getAttribute('title')||el.getAttribute('alt')||''):'';
+  var tag=(el.tagName||'').toLowerCase();
+  if(tag==='img')  return 'image'+(a?' "'+a+'"':'');
+  if(tag==='canvas')return 'the chart';
+  var own=(el.textContent||'').trim().replace(/\s+/g,' ');
+  if(tag==='select'){var o=el.options&&el.options[el.selectedIndex];return 'dropdown'+(o?' ("'+o.text.trim()+'")':'');}
+  if(tag==='input') return 'input'+(el.value?' ("'+String(el.value).slice(0,24)+'")':'');
+  if(a) return '"'+a.slice(0,50)+'"';
+  if(own) return '"'+own.slice(0,50)+'"';
+  return tag||'element';
+}
+function nearestHeading(el){
+  // Walk backwards through the document for the last heading-ish thing above the click,
+  // so notes on plain text or a status row still land under something nameable.
+  var all=Array.prototype.slice.call(document.querySelectorAll(
+    '.page.active .chart-title,.page.active .table-title,.page.active h1,.page.active h2,.page.active h3,.page.active .kpi-label'));
+  if(!all.length)return '';
+  var y=0; try{y=el.getBoundingClientRect().top;}catch(e){}
+  var best='';
+  all.forEach(function(h){ try{ if(h.getBoundingClientRect().top<=y+2) best=titleText(h); }catch(e){} });
+  return best;
+}
 function sectionOf(el){
   var n=el, hop=0;
   while(n&&n!==document.body&&hop<7){
     if(n.classList&&(n.classList.contains('chart-container')||n.classList.contains('table-container')||n.classList.contains('kpi-card'))){
       var t=n.querySelector('.chart-title,.table-title,.kpi-label');
-      if(t)return titleText(t);
+      if(t)return titleText(t)+' — '+describe(el);
     }
     n=n.parentElement; hop++;
   }
-  var h=el.closest?el.closest('.chart-container,.table-container,.kpi-card,table,canvas'):null;
-  if(h){var tt=h.querySelector&&h.querySelector('.chart-title,.table-title,.kpi-label');if(tt)return titleText(tt);}
-  return (el.textContent||'').trim().replace(/\s+/g,' ').slice(0,60)||'(page)';
+  // Not inside a chart/table/KPI. Say where on the page it was and what it was, rather than
+  // falling through to a useless placeholder — a note reading "(page)" cannot be acted on and
+  // would mean going back to ask, which is the whole thing this is meant to avoid.
+  var reg=regionOf(el);
+  if(reg)return reg+' — '+describe(el);
+  var head=nearestHeading(el);
+  return (head?head+' — ':'')+describe(el);
 }
 function anchorFor(el){
   var n=el.closest?el.closest('.chart-container,.table-container,.kpi-card'):null;
@@ -613,11 +649,17 @@ document.addEventListener('click',function(e){
   if(bar.contains(e.target)||comp.contains(e.target))return;
   e.preventDefault(); e.stopPropagation();
   var a=anchorFor(e.target);
-  pending={tab:tabName(),section:sectionOf(e.target),filters:filters()};
+  pending={tab:tabName(),section:sectionOf(e.target),filters:filters(),
+           where:regionOf(e.target)||'Page body',
+           at:Math.round(window.scrollY)+'px down · '+window.innerWidth+'x'+window.innerHeight};
   var r=(a&&a.getBoundingClientRect)?a.getBoundingClientRect():{left:80,bottom:120};
   comp.style.left=Math.max(12,Math.min(window.innerWidth-345,r.left+window.scrollX))+'px';
   comp.style.top=(r.bottom+window.scrollY+9)+'px';
-  document.getElementById('fbCtx').textContent=pending.tab+(pending.section?' — '+pending.section:'')+(pending.filters?'  ·  '+pending.filters:'');
+  // Show them what we captured. If it reads thin they can say so in the note itself,
+  // rather than us discovering later that we cannot place it.
+  document.getElementById('fbCtx').innerHTML='<b>'+esc(pending.tab)+'</b>'
+    +(pending.section?' &mdash; '+esc(pending.section):'')
+    +(pending.filters?'<br>'+esc(pending.filters):'');
   document.getElementById('fbTxt').value='';
   var wf=document.getElementById('fbWho'); wf.value=who(); wf.style.display=who()?'none':'block';
   comp.style.display='block'; document.getElementById('fbTxt').focus();
@@ -633,7 +675,7 @@ document.getElementById('fbSave').onclick=function(){
   // blocked outright in some embedded browsers, which silently lost the note.
   var w=(document.getElementById('fbWho').value||'').trim(); if(w)setWho(w); else w=who();
   notes.push({t:t,who:w,tab:pending.tab,section:pending.section,filters:pending.filters,
-              when:new Date().toLocaleString()});
+              where:pending.where,at:pending.at,when:new Date().toLocaleString()});
   save(notes); comp.style.display='none'; render();
 };
 document.getElementById('fbCancel').onclick=function(){comp.style.display='none';};
@@ -680,6 +722,7 @@ function digest(){
       out.push('  '+(i+1)+'. '+n.t);
       var meta=[]; if(n.section)meta.push(n.section); if(n.filters)meta.push(n.filters);
       if(meta.length)out.push('     ['+meta.join('  ·  ')+']');
+      if(n.at)out.push('     (' + (n.where?n.where+' · ':'') + n.at + ')');
       if(n.who)out.push('     — '+n.who+', '+n.when);
     });
   });
