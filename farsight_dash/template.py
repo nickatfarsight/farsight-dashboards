@@ -575,17 +575,23 @@ function filters(){
   var w=document.getElementById('fAsOfWeek'); if(w&&w.selectedIndex>=0&&w.options[w.selectedIndex])out.push(w.options[w.selectedIndex].text.trim());
   return out.join(' · ');
 }
+function titleText(t){
+  var c=t.cloneNode(true);
+  Array.prototype.forEach.call(c.querySelectorAll('.chart-hint,.chart-tip,.has-tooltip .tip,.data-flag'),
+    function(x){x.parentNode.removeChild(x);});
+  return (c.textContent||'').trim().replace(/\s+/g,' ').slice(0,80);
+}
 function sectionOf(el){
   var n=el, hop=0;
   while(n&&n!==document.body&&hop<7){
     if(n.classList&&(n.classList.contains('chart-container')||n.classList.contains('table-container')||n.classList.contains('kpi-card'))){
       var t=n.querySelector('.chart-title,.table-title,.kpi-label');
-      if(t)return t.textContent.trim().replace(/\s+/g,' ').slice(0,80);
+      if(t)return titleText(t);
     }
     n=n.parentElement; hop++;
   }
   var h=el.closest?el.closest('.chart-container,.table-container,.kpi-card,table,canvas'):null;
-  if(h){var tt=h.querySelector&&h.querySelector('.chart-title,.table-title,.kpi-label');if(tt)return tt.textContent.trim().slice(0,80);}
+  if(h){var tt=h.querySelector&&h.querySelector('.chart-title,.table-title,.kpi-label');if(tt)return titleText(tt);}
   return (el.textContent||'').trim().replace(/\s+/g,' ').slice(0,60)||'(page)';
 }
 function anchorFor(el){
