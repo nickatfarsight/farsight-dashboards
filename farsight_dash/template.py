@@ -501,13 +501,14 @@ var notes=load(), picking=false;
 /* ---------- styles: inherit the client theme, no new colour decisions ---------- */
 var css=document.createElement('style');
 css.textContent=
-"#fbBtn{position:fixed;right:22px;bottom:22px;z-index:9000;background:var(--bg-card,#fff);color:var(--text,#121212);"
+"#fbBar{position:fixed;right:22px;bottom:22px;z-index:9000;display:flex;gap:9px;align-items:center;}"
++"#fbBtn,#fbCount{background:var(--bg-card,#fff);color:var(--text,#121212);"
 +"border:1px solid var(--text,#121212);padding:10px 16px;font:inherit;font-size:13px;cursor:pointer;display:flex;"
 +"align-items:center;gap:9px;transition:all .15s ease-in;}"
-+"#fbBtn:hover{background:var(--text,#121212);color:#fff;}"
-+"#fbBtn .n{min-width:19px;height:19px;line-height:19px;text-align:center;font-size:11px;"
++"#fbBtn:hover,#fbCount:hover{background:var(--text,#121212);color:#fff;}"
++"#fbCount .n{min-width:19px;height:19px;line-height:19px;text-align:center;font-size:11px;"
 +"background:var(--text,#121212);color:#fff;padding:0 5px;}"
-+"#fbBtn:hover .n{background:#fff;color:var(--text,#121212);}"
++"#fbCount:hover .n{background:#fff;color:var(--text,#121212);}"
 +"#fbBtn.on{background:var(--text,#121212);color:#fff;}"
 +"#fbPanel{position:fixed;top:0;right:0;bottom:0;width:400px;max-width:92vw;background:var(--bg-card,#fff);"
 +"border-left:1px solid var(--text,#121212);z-index:9100;display:none;flex-direction:column;}"
@@ -546,9 +547,11 @@ css.textContent=
 document.head.appendChild(css);
 
 /* ---------- chrome ---------- */
-var btn=document.createElement('button'); btn.id='fbBtn';
-btn.innerHTML='<span>'+(CFG.label||'Add a note')+'</span><span class="n" id="fbN">0</span>';
-document.body.appendChild(btn);
+var bar=document.createElement('div'); bar.id='fbBar';
+bar.innerHTML='<button id="fbBtn"><span>'+(CFG.label||'Add a note')+'</span></button>'
+ +'<button id="fbCount" title="Review and send your notes"><span class="n" id="fbN">0</span> <span id="fbNW">notes</span></button>';
+document.body.appendChild(bar);
+var btn=document.getElementById('fbBtn'), cnt=document.getElementById('fbCount');
 var tip=document.createElement('div'); tip.id='fbTip';
 tip.textContent='Click anything on the page to attach a note — press Esc to cancel';
 document.body.appendChild(tip);
@@ -594,12 +597,12 @@ function anchorFor(el){
 var lastHi=null, pending=null;
 function clearHi(){if(lastHi){lastHi.classList.remove('fb-hi');lastHi=null;}}
 document.addEventListener('mouseover',function(e){
-  if(!picking)return; if(btn.contains(e.target)||comp.contains(e.target))return;
+  if(!picking)return; if(bar.contains(e.target)||comp.contains(e.target))return;
   clearHi(); var a=anchorFor(e.target); if(a&&a!==document.body){a.classList.add('fb-hi');lastHi=a;}
 });
 document.addEventListener('click',function(e){
   if(!picking)return;
-  if(btn.contains(e.target)||comp.contains(e.target))return;
+  if(bar.contains(e.target)||comp.contains(e.target))return;
   e.preventDefault(); e.stopPropagation();
   var a=anchorFor(e.target);
   pending={tab:tabName(),section:sectionOf(e.target),filters:filters()};
@@ -623,7 +626,8 @@ document.getElementById('fbSave').onclick=function(){
   save(notes); comp.style.display='none'; render();
 };
 document.getElementById('fbCancel').onclick=function(){comp.style.display='none';};
-btn.onclick=function(){ if(picking){setPick(false);return;} panel.classList.add('open'); render(); };
+btn.onclick=function(e){ e.stopPropagation(); setPick(!picking); panel.classList.remove('open'); comp.style.display='none'; };
+cnt.onclick=function(e){ e.stopPropagation(); setPick(false); panel.classList.add('open'); render(); };
 document.getElementById('fbClose').onclick=function(){panel.classList.remove('open');};
 document.getElementById('fbClear').onclick=function(){
   if(!notes.length)return;
@@ -631,6 +635,8 @@ document.getElementById('fbClear').onclick=function(){
 };
 function render(){
   document.getElementById('fbN').textContent=notes.length;
+  document.getElementById('fbNW').textContent=(notes.length===1?'note':'notes');
+  cnt.style.display=notes.length?'flex':'none';
   var L=document.getElementById('fbList');
   if(!notes.length){
     L.innerHTML='<p style="font-size:12.5px;color:var(--text-muted,#777);line-height:1.6;padding-top:16px;">'
