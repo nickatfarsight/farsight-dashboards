@@ -1058,6 +1058,8 @@ def _build_retailer_summary(sales_df, forecast_data, forecast_data_bm, forecast_
         mtd_ly = rd_mtd['LY Total Sales $'].sum()
         mtd_bm = rd_mtd['TY B&M Sales $'].sum()
         mtd_dc = rd_mtd['TY Dotcom Sales $'].sum()
+        mtd_bm_ly = rd_mtd['LY B&M Sales $'].sum()
+        mtd_dc_ly = rd_mtd['LY Dotcom Sales $'].sum()
         wk_val = rd_wk['TY Total Sales $'].sum()
         wk_ly = rd_wk['LY Total Sales $'].sum()
         wk_bm = rd_wk['TY B&M Sales $'].sum()
@@ -1151,6 +1153,7 @@ def _build_retailer_summary(sales_df, forecast_data, forecast_data_bm, forecast_
             'ytd_u': ytd_u,
             'mtd': round(mtd_val, 2), 'mtd_ly': round(mtd_ly, 2),
             'mtd_bm': round(mtd_bm, 2), 'mtd_dc': round(mtd_dc, 2),
+            'mtd_bm_ly': round(mtd_bm_ly, 2), 'mtd_dc_ly': round(mtd_dc_ly, 2),
             'wk': round(wk_val, 2), 'wk_ly': round(wk_ly, 2),
             'wk_bm': round(wk_bm, 2), 'wk_dc': round(wk_dc, 2),
             'wk_bm_ly': round(wk_bm_ly, 2), 'wk_dc_ly': round(wk_dc_ly, 2),

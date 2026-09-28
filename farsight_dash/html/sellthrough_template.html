@@ -626,6 +626,7 @@ function recomputeRetSummary(asOfWk,ch){
       ytd_u:sumF(ty,r=>r.ty_u||0),
       mtd:sumF(tyMo,r=>_tyCh(r,ch)), mtd_ly:sumF(lyMo,r=>_lyCh(r,ch)),
       mtd_bm:sumF(tyMo,r=>r.ty_bm||0), mtd_dc:sumF(tyMo,r=>r.ty_dc||0),
+      mtd_bm_ly:sumF(lyMo,r=>r.ly_bm||0), mtd_dc_ly:sumF(lyMo,r=>r.ly_dc||0),
       wk:_tyCh(wkRow,ch), wk_ly:_lyCh(lyWkRow,ch),
       wk_bm:wkRow.ty_bm||0, wk_dc:wkRow.ty_dc||0, wk_bm_ly:lyWkRow.ly_bm||0, wk_dc_ly:lyWkRow.ly_dc||0,
       l4w:sumF(tyL4,r=>_tyCh(r,ch)), l4w_ly:sumF(lyL4,r=>_lyCh(r,ch)),
@@ -638,7 +639,7 @@ function recomputeRetSummary(asOfWk,ch){
   // Per-retailer rows, then 'All' = sum of them (keeps All consistent with the channel filter)
   const out=(M.retailers||[]).map(rowFor);
   const allRowOut={ret:'All'};
-  const keys=['ytd','ytd_ly','ytd_bm','ytd_dc','ytd_bm_ly','ytd_dc_ly','ytd_u','mtd','mtd_ly','mtd_bm','mtd_dc','wk','wk_ly','wk_bm','wk_dc','wk_bm_ly','wk_dc_ly','l4w','l4w_ly','fc_u_ytd','fc_d_ytd','fc_d_mtd','fc_d_wk','fc_d_l4w','fc_d_wk_bm','fc_d_ytd_bm','fc_d_wk_dc','fc_d_ytd_dc'];
+  const keys=['ytd','ytd_ly','ytd_bm','ytd_dc','ytd_bm_ly','ytd_dc_ly','ytd_u','mtd','mtd_ly','mtd_bm','mtd_dc','mtd_bm_ly','mtd_dc_ly','wk','wk_ly','wk_bm','wk_dc','wk_bm_ly','wk_dc_ly','l4w','l4w_ly','fc_u_ytd','fc_d_ytd','fc_d_mtd','fc_d_wk','fc_d_l4w','fc_d_wk_bm','fc_d_ytd_bm','fc_d_wk_dc','fc_d_ytd_dc'];
   keys.forEach(k=>{allRowOut[k]=out.reduce((a,r)=>a+(r[k]||0),0);});
   out.push(allRowOut);
   return out;
@@ -736,7 +737,7 @@ function getRetSummary(ret){return DATA.ret_summary.find(r=>r.ret===ret)||DATA.r
 function getAggSummary(){
   // When multiple retailers selected, aggregate their summaries
   if(state.retailers[0]==='All'||state.retailers.length===1)return getRetSummary(effRet()||'All');
-  const keys=['ytd','ytd_ly','ytd_bm','ytd_dc','ytd_bm_ly','ytd_dc_ly','ytd_u','mtd','mtd_ly','mtd_bm','mtd_dc','wk','wk_ly','wk_bm','wk_dc','wk_bm_ly','wk_dc_ly','l4w','l4w_ly','fc_u_ytd','fc_d_ytd','fc_d_mtd','fc_d_wk','fc_d_l4w','fc_d_wk_bm','fc_d_ytd_bm','fc_d_wk_dc','fc_d_ytd_dc'];
+  const keys=['ytd','ytd_ly','ytd_bm','ytd_dc','ytd_bm_ly','ytd_dc_ly','ytd_u','mtd','mtd_ly','mtd_bm','mtd_dc','mtd_bm_ly','mtd_dc_ly','wk','wk_ly','wk_bm','wk_dc','wk_bm_ly','wk_dc_ly','l4w','l4w_ly','fc_u_ytd','fc_d_ytd','fc_d_mtd','fc_d_wk','fc_d_l4w','fc_d_wk_bm','fc_d_ytd_bm','fc_d_wk_dc','fc_d_ytd_dc'];
   const agg={ret:'Selected'};
   keys.forEach(k=>{agg[k]=0;});
   state.retailers.forEach(r=>{const rs=getRetSummary(r);if(rs)keys.forEach(k=>{agg[k]+=rs[k]||0;});});
@@ -1191,12 +1192,14 @@ function renderEmailTable(){
   const sepRow=DATA.ret_summary.find(r=>r.ret==='Sephora')||{};
   const sepUKRow=DATA.ret_summary.find(r=>r.ret==='Sephora UK')||{};
 
+  // The comparison block follows the period toggle: MTD shows MTD vs LY / Fcst, else the week.
+  const _perfMtd=state.period==='mtd';
   let h='<table class="email-table"><thead>';
   // Row 1: group headers
   h+='<tr style="background:var(--accent);color:#fff;">';
   h+='<th rowspan="2" style="text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Customer</th>';
   h+='<th colspan="2" style="text-align:center;padding:6px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(255,255,255,0.2);">Period</th>';
-  h+='<th colspan="4" style="text-align:center;padding:6px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-left:2px solid rgba(255,255,255,0.3);border-bottom:1px solid rgba(255,255,255,0.2);">Week Performance</th>';
+  h+='<th colspan="4" style="text-align:center;padding:6px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-left:2px solid rgba(255,255,255,0.3);border-bottom:1px solid rgba(255,255,255,0.2);">'+(_perfMtd?'MTD':'Week')+' Performance</th>';
   h+='<th colspan="5" style="text-align:center;padding:6px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-left:2px solid rgba(255,255,255,0.3);border-bottom:1px solid rgba(255,255,255,0.2);">YTD Performance</th>';
   h+='</tr>';
   // Row 2: column headers
@@ -1242,10 +1245,11 @@ function renderEmailTable(){
     row+='<td style="'+nameStyle+subStyle+'">'+name+freshTag+((retKey&&!isSub)?lyMarker(retKey):'')+'</td>';
     row+='<td class="r">'+fmtK(r.wk)+'</td>';
     row+='<td class="r">'+fmtK(r.mtd)+'</td>';
-    row+=dolCell(r.wk,r.wk_ly,SEP_BORDER);
-    row+=pctCell(r.wk,r.wk_ly);
-    row+=(r.fc_d_wk>0)?dolCell(r.wk,r.fc_d_wk):naCell();
-    row+=(r.fc_d_wk>0)?pctCell(r.wk,r.fc_d_wk):naCell();
+    const cT=_perfMtd?r.mtd:r.wk, cL=_perfMtd?r.mtd_ly:r.wk_ly, cF=(_perfMtd?r.fc_d_mtd:r.fc_d_wk)||0;
+    row+=dolCell(cT,cL,SEP_BORDER);
+    row+=pctCell(cT,cL);
+    row+=(cF>0)?dolCell(cT,cF):naCell();
+    row+=(cF>0)?pctCell(cT,cF):naCell();
     row+='<td class="r" style="'+SEP_BORDER+'">'+fmtK(r.ytd)+'</td>';
     row+=dolCell(r.ytd,r.ytd_ly);
     row+=pctCell(r.ytd,r.ytd_ly);
@@ -1256,9 +1260,9 @@ function renderEmailTable(){
   }
 
   // Sephora US: B&M and .com sub-rows, then Sephora Total (US), then Sephora UK standalone
-  const bmRow={wk:sepRow.wk_bm||0,wk_ly:sepRow.wk_bm_ly||0,mtd:sepRow.mtd_bm||0,ytd:sepRow.ytd_bm||0,ytd_ly:sepRow.ytd_bm_ly||0,fc_d_wk:sepRow.fc_d_wk_bm||0,fc_d_ytd:sepRow.fc_d_ytd_bm||0};
+  const bmRow={wk:sepRow.wk_bm||0,wk_ly:sepRow.wk_bm_ly||0,mtd:sepRow.mtd_bm||0,mtd_ly:sepRow.mtd_bm_ly||0,ytd:sepRow.ytd_bm||0,ytd_ly:sepRow.ytd_bm_ly||0,fc_d_wk:sepRow.fc_d_wk_bm||0,fc_d_ytd:sepRow.fc_d_ytd_bm||0};
   h+=buildRow('Sephora B&M',bmRow,false,true,'Sephora');
-  const dcRow={wk:sepRow.wk_dc||0,wk_ly:sepRow.wk_dc_ly||0,mtd:sepRow.mtd_dc||0,ytd:sepRow.ytd_dc||0,ytd_ly:sepRow.ytd_dc_ly||0,fc_d_wk:sepRow.fc_d_wk_dc||0,fc_d_ytd:sepRow.fc_d_ytd_dc||0};
+  const dcRow={wk:sepRow.wk_dc||0,wk_ly:sepRow.wk_dc_ly||0,mtd:sepRow.mtd_dc||0,mtd_ly:sepRow.mtd_dc_ly||0,ytd:sepRow.ytd_dc||0,ytd_ly:sepRow.ytd_dc_ly||0,fc_d_wk:sepRow.fc_d_wk_dc||0,fc_d_ytd:sepRow.fc_d_ytd_dc||0};
   h+=buildRow('Sephora.com',dcRow,false,true,'Sephora');
   h+=buildRow('Sephora Total',sepRow,false,false,'Sephora');
   if(sepUKRow.ytd>0||sepUKRow.wk>0) h+=buildRow('Sephora UK',sepUKRow,false,false,'Sephora UK');
