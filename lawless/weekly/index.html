@@ -48,6 +48,13 @@ button,select{font-family:inherit;color:inherit}
 .chip{border:1px solid var(--line-2);background:var(--card);border-radius:999px;padding:7px 13px;font-size:12.5px;cursor:pointer;white-space:nowrap;color:var(--muted);transition:all .15s}
 .chip:hover{border-color:var(--accent)}
 .chip.on{background:var(--ty);border-color:var(--ty);color:#fff}
+.chips.sub{display:none;align-items:center;gap:6px;margin-top:-4px}
+.chips.sub.open{display:flex}
+.chips.sub .lbl{font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--faint);padding:0 4px 0 2px;white-space:nowrap}
+.chips.sub .chip{padding:5px 11px;font-size:12px;background:transparent}
+.chips.sub .chip small{color:var(--faint);margin-left:4px;font-size:10.5px}
+.chips.sub .chip.on{background:var(--blush);border-color:var(--ty);color:var(--ink)}
+.chips.sub .chip.on small{color:var(--muted)}
 
 /* sections */
 section{padding:56px 0 0;scroll-margin-top:120px}
@@ -297,8 +304,10 @@ footer img{height:12px;vertical-align:middle;opacity:.6;margin-left:4px}
   .kpi{border-right:0!important;border-bottom:1px solid var(--line)}
   .sh .d{margin-left:0}
   section{padding-top:44px}
-  .bar .wrap{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;padding-top:8px;padding-bottom:8px}
+  .bar .wrap{display:grid;grid-template-columns:1fr auto;gap:8px;padding-top:8px;padding-bottom:8px}
   .bar #f-per{grid-column:1/-1;grid-row:2;justify-content:space-between}
+  .bar .chips{grid-column:1/-1}
+  .chips.sub{margin-top:0}
   .bar .sel{width:100%;min-width:0}
   .lytog{padding:7px 10px}
   .top{padding:22px 0 14px}
@@ -334,8 +343,9 @@ footer img{height:12px;vertical-align:middle;opacity:.6;margin-left:4px}
 <div class="bar"><div class="wrap">
   <select class="sel" id="f-wk" aria-label="Week"></select>
   <div class="seg" id="f-per"></div>
-  <select class="sel" id="f-ch" aria-label="Channel"></select>
   <button class="lytog" id="f-ly" aria-pressed="false">Show LY</button>
+  <div class="chips" id="f-ch"></div>
+  <div class="chips sub" id="f-sub"></div>
 </div></div>
 
 <main class="wrap">
@@ -576,19 +586,20 @@ function buildControls() {
     b.onclick = () => set(key, k); $(host).appendChild(b);
   });
   seg('f-per', PERIODS, 'per');
-  const cs = $('f-ch'), opt = (k, l) => { const o = document.createElement('option'); o.value = k; o.textContent = l; return o; };
-  cs.appendChild(opt('all', 'All channels'));
-  CHK.forEach(k => {
-    cs.appendChild(opt(k, k === 'sephora' ? 'Sephora (all)' : CHL[k]));
-    if (k === 'sephora') SUBK.forEach(sk => cs.appendChild(opt(sk, '\u00a0\u00a0\u2013 ' + CHL[sk] + (SUBNOTE[sk] && sk !== 'seph_ca' ? ' (' + SUBNOTE[sk] + ')' : ''))));
-  });
-  cs.onchange = () => set('ch', cs.value);
+  const chip = (host, k, html) => { const b = document.createElement('button'); b.className = 'chip'; b.innerHTML = html; b.dataset.k = k; b.onclick = () => set('ch', k); $(host).appendChild(b); };
+  [['all', 'All channels'], ...CHK.map(k => [k, CHL[k]])].forEach(([k, l]) => chip('f-ch', k, esc(l)));
+  // Sephora drill-downs: a second row that opens under the chips while Sephora (or one of its parts) is selected
+  $('f-sub').innerHTML = '<span class="lbl">Sephora</span>';
+  [['sephora', 'All'], ...SUBK.map(k => [k, CHL[k].replace(/^Sephora\s*/, '').replace(/^\.com$/, '.com') || CHL[k]])].forEach(([k, l]) =>
+    chip('f-sub', k, esc(k === 'seph_bm' ? 'Stores' : l) + (k === 'seph_bm' || k === 'seph_dc' ? '<small>US+CA</small>' : '')));
   $('f-ly').onclick = () => set('ly', !S.ly);
 }
 function syncControls() {
   $('f-wk').value = S.wk;
   document.querySelectorAll('#f-per button').forEach(b => b.classList.toggle('on', b.dataset.k === S.per));
-  $('f-ch').value = S.ch;
+  document.querySelectorAll('#f-ch .chip').forEach(b => b.classList.toggle('on', b.dataset.k === S.ch || (b.dataset.k === 'sephora' && inSeph(S.ch))));
+  document.querySelectorAll('#f-sub .chip').forEach(b => b.classList.toggle('on', b.dataset.k === S.ch));
+  $('f-sub').classList.toggle('open', inSeph(S.ch));
   $('f-ly').classList.toggle('on', S.ly); $('f-ly').setAttribute('aria-pressed', S.ly);
   $('f-ly').textContent = S.ly ? 'LY on' : 'Show LY';
   document.body.classList.toggle('show-ly', S.ly);
