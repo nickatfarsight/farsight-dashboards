@@ -4600,7 +4600,7 @@ function renderCategory(){
       return;
     }
     const catJs=String(c.cat).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-    h+=`<tr class="clickable" onclick="state.category='${catJs}';renderActive();">`;
+    h+=`<tr class="clickable" title="Click for by-channel detail vs LY & 9/15 Fcst" onclick="showGroupChannelDrill('${catJs}','${groupField}','period')">`;
     h+=`<td><strong>${c.cat}</strong></td>`;
     h+=`<td class="r" title="Click for by-channel detail vs LY & 9/15 Fcst" style="cursor:zoom-in;text-decoration:underline dotted" onclick="event.stopPropagation();showGroupChannelDrill('${catJs}','${groupField}','period')">${fmtK(c.ty)}</td>`;
     h+=`<td class="r">${fmtK(c.ly)}</td>`;
@@ -7998,5 +7998,8 @@ renderOverview();
 
 </script>
 </div><!-- /pw-content -->
+<script>/* Farsight: tell viewers when a newer build of this page is live (tabs left open for days) */
+(function(){var tag=null,busy=false;function bar(){if(document.getElementById('fs-new'))return;var b=document.createElement('div');b.id='fs-new';b.style.cssText='position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#1A1A1A;color:#fff;padding:12px 20px;border-radius:999px;font:13px Helvetica,Arial,sans-serif;z-index:100000;box-shadow:0 8px 24px rgba(0,0,0,.2);cursor:pointer;white-space:nowrap';b.textContent='New data is live. Tap to refresh';b.onclick=function(){location.reload()};document.body.appendChild(b)}function chk(){if(busy||document.hidden||location.protocol.indexOf('http')!==0)return;busy=true;fetch(location.pathname,{method:'HEAD',cache:'no-store'}).then(function(r){var e=r.headers.get('etag')||r.headers.get('last-modified');if(!e)return;if(tag===null)tag=e;else if(e!==tag)bar()}).catch(function(){}).then(function(){busy=false})}chk();document.addEventListener('visibilitychange',chk);setInterval(chk,600000)})();
+</script>
 </body>
 </html>
